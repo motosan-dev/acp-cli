@@ -178,6 +178,7 @@ pub async fn run_prompt(
     permission_mode: PermissionMode,
     output_format: &str,
     timeout_secs: Option<u64>,
+    no_wait: bool,
 ) -> Result<i32> {
     let mut renderer = make_renderer(output_format);
 
@@ -229,6 +230,29 @@ pub async fn run_prompt(
         match QueueClient::connect(&key).await {
             Ok(mut client) => {
                 renderer.session_info("Connected to queue owner");
+
+                // --no-wait: enqueue the prompt and return immediately.
+                if no_wait {
+                    let position = client.enqueue_only(vec![prompt_text.clone()]).await?;
+                    renderer.session_info(&format!("Prompt queued (position {position})"));
+                    renderer.done();
+
+                    // Log the user prompt (best-effort). No assistant entry since
+                    // we won't wait for the response.
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    let user_entry = ConversationEntry {
+                        role: "user".to_string(),
+                        content: prompt_text,
+                        timestamp: now,
+                    };
+                    let _ = append_entry(&key, &user_entry);
+
+                    return Ok(0);
+                }
+
                 let result = client
                     .prompt(vec![prompt_text.clone()], &mut *renderer, &permission_mode)
                     .await;
@@ -261,6 +285,12 @@ pub async fn run_prompt(
             }
             Err(e) => {
                 // Socket connection failed despite valid lease.
+                if no_wait {
+                    return Err(AcpCliError::Usage(
+                        "No active session. Run without --no-wait first to start a session."
+                            .to_string(),
+                    ));
+                }
                 // Fall through to become a new queue owner (owner may have
                 // crashed after writing the lease).
                 renderer.session_info(&format!(
@@ -273,6 +303,13 @@ pub async fn run_prompt(
 
     // --- Become the queue owner ---
 
+    // --no-wait requires an existing queue owner to accept the prompt. Since no
+    // valid lease was found, we cannot fire-and-forget.
+    if no_wait {
+        return Err(AcpCliError::Usage(
+            "No active session. Run without --no-wait first to start a session.".to_string(),
+        ));
+    }
 
     // Write PID file so `cancel` and `status` commands can find us.
     // The guard removes it automatically when this function returns.

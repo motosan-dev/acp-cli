@@ -143,6 +143,7 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
                     permission_mode,
                     &cli.format,
                     cli.timeout.or(config.timeout),
+                    cli.no_wait,
                 )
                 .await
             } else {

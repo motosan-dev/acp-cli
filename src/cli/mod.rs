@@ -59,6 +59,11 @@ pub struct Cli {
     /// Enable verbose output
     #[arg(long)]
     pub verbose: bool,
+
+    /// Fire-and-forget: queue the prompt and return immediately without waiting
+    /// for the result. Requires an active session (queue owner) to be running.
+    #[arg(long)]
+    pub no_wait: bool,
 }
 
 #[derive(Subcommand)]
