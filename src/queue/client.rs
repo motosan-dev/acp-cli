@@ -102,6 +102,44 @@ impl QueueClient {
         }
     }
 
+    /// Send a prompt and wait only for the `Queued` acknowledgement, returning
+    /// the queue position. This is used by `--no-wait` mode so the CLI can exit
+    /// immediately after confirming the prompt was accepted.
+    pub async fn enqueue_only(&mut self, messages: Vec<String>) -> Result<usize> {
+        let reply_id = generate_reply_id();
+
+        let request = QueueRequest::Prompt {
+            messages,
+            reply_id: reply_id.clone(),
+        };
+        send_message(&mut self.stream, &request)
+            .await
+            .map_err(|e| AcpCliError::Connection(format!("failed to send prompt: {e}")))?;
+
+        // Wait only for the Queued response, then return immediately.
+        loop {
+            let response: Option<QueueResponse> = recv_message(&mut self.reader)
+                .await
+                .map_err(|e| AcpCliError::Connection(format!("failed to read response: {e}")))?;
+
+            match response {
+                Some(QueueResponse::Queued { position, .. }) => {
+                    return Ok(position);
+                }
+                Some(QueueResponse::Error { message }) => {
+                    return Err(AcpCliError::Agent(message));
+                }
+                None => {
+                    return Err(AcpCliError::Connection(
+                        "queue owner disconnected before acknowledging prompt".to_string(),
+                    ));
+                }
+                // Skip any other messages that arrive before the Queued ack.
+                _ => continue,
+            }
+        }
+    }
+
     /// Send a cancel request to the queue owner.
     pub async fn cancel(&mut self) -> std::io::Result<()> {
         send_message(&mut self.stream, &QueueRequest::Cancel).await
