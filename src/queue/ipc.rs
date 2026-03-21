@@ -8,8 +8,10 @@ use tokio::net::{UnixListener, UnixStream};
 use crate::session::scoping::session_dir;
 
 /// Return the Unix socket path for a given session key.
+/// Uses first 12 hex chars of the key to stay within macOS SUN_LEN limit (~104 bytes).
 pub fn socket_path(session_key: &str) -> PathBuf {
-    session_dir().join(format!("{session_key}.sock"))
+    let short_key = &session_key[..session_key.len().min(12)];
+    session_dir().join(format!("{short_key}.sock"))
 }
 
 /// Start an IPC server on a Unix socket.
