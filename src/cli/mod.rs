@@ -78,6 +78,10 @@ pub enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// Cancel a running prompt by sending SIGTERM
+    Cancel,
+    /// Show status of the current session (running/idle/closed)
+    Status,
 }
 
 #[derive(Subcommand)]

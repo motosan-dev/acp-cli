@@ -81,6 +81,16 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
                 Ok(0)
             }
         },
+        Some(Commands::Cancel) => {
+            let session_name = cli.session.as_deref();
+            acp_cli::cli::session::cancel_prompt(&agent, &cwd, session_name)?;
+            Ok(0)
+        }
+        Some(Commands::Status) => {
+            let session_name = cli.session.as_deref();
+            acp_cli::cli::session::session_status(&agent, &cwd, session_name)?;
+            Ok(0)
+        }
         Some(Commands::Exec { ref prompt }) => {
             let stdin_is_tty = std::io::stdin().is_terminal();
             let prompt_text = resolve_prompt(cli.file.as_deref(), prompt, stdin_is_tty)?;

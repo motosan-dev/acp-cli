@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::error::{AcpCliError, Result};
 use crate::session::history::load_history;
 use crate::session::persistence::SessionRecord;
+use crate::session::pid;
 use crate::session::scoping::{find_git_root, session_dir, session_key};
 
 /// Create a new session record and persist it to disk.
@@ -26,6 +27,7 @@ pub fn sessions_new(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> {
         name: name.map(|s| s.to_string()),
         created_at: now,
         closed: false,
+        acp_session_id: None,
     };
 
     let path = session_dir().join(format!("{key}.json"));
@@ -168,6 +170,9 @@ pub fn sessions_show(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> {
     }
     println!("Created at: {created}");
     println!("Status:     {status}");
+    if let Some(ref acp_id) = record.acp_session_id {
+        println!("ACP Session: {acp_id}");
+    }
 
     Ok(())
 }
@@ -204,6 +209,71 @@ pub fn sessions_history(agent: &str, cwd: &str, name: Option<&str>) -> Result<()
         println!("[{ts}] {}:", entry.role);
         println!("{}", entry.content);
         println!();
+    }
+
+    Ok(())
+}
+
+/// Cancel a running prompt by sending SIGTERM to the active process.
+pub fn cancel_prompt(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> {
+    let cwd_path = Path::new(cwd);
+    let resolved_dir = find_git_root(cwd_path).unwrap_or_else(|| cwd_path.to_path_buf());
+    let dir_str = resolved_dir.to_string_lossy();
+    let session_name = name.unwrap_or("");
+    let key = session_key(agent, &dir_str, session_name);
+
+    match pid::read_pid(&key) {
+        Some(active_pid) => {
+            // Send SIGTERM to the running process
+            // SAFETY: sending SIGTERM to a known-alive PID is standard POSIX behavior.
+            let ret = unsafe { libc::kill(active_pid as libc::pid_t, libc::SIGTERM) };
+            if ret == 0 {
+                println!("Sent SIGTERM to process {active_pid}.");
+            } else {
+                eprintln!("Failed to send signal to process {active_pid}.");
+            }
+            Ok(())
+        }
+        None => {
+            println!("No active prompt.");
+            Ok(())
+        }
+    }
+}
+
+/// Show the status of the current session, including whether a prompt is running.
+pub fn session_status(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> {
+    let cwd_path = Path::new(cwd);
+    let resolved_dir = find_git_root(cwd_path).unwrap_or_else(|| cwd_path.to_path_buf());
+    let dir_str = resolved_dir.to_string_lossy();
+    let session_name = name.unwrap_or("");
+    let key = session_key(agent, &dir_str, session_name);
+
+    let sess_path = session_dir().join(format!("{key}.json"));
+    let record = match SessionRecord::load(&sess_path).map_err(AcpCliError::Io)? {
+        Some(r) => r,
+        None => {
+            return Err(AcpCliError::NoSession {
+                agent: agent.to_string(),
+                cwd: cwd.to_string(),
+            });
+        }
+    };
+
+    let active_pid = pid::read_pid(&key);
+    let status = if record.closed {
+        "closed"
+    } else if active_pid.is_some() {
+        "running"
+    } else {
+        "idle"
+    };
+
+    println!("Agent:   {}", record.agent);
+    println!("Session: {}", record.id);
+    println!("Status:  {status}");
+    if let Some(p) = active_pid {
+        println!("PID:     {p}");
     }
 
     Ok(())

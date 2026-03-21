@@ -45,6 +45,7 @@ fn save_and_load_roundtrip() {
         name: Some("my-session".to_string()),
         created_at: 1700000000,
         closed: false,
+        acp_session_id: None,
     };
 
     record.save(&path).unwrap();
