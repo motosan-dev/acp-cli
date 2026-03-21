@@ -68,6 +68,18 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
                 acp_cli::cli::session::sessions_list(Some(&agent), Some(&cwd))?;
                 Ok(0)
             }
+            SessionAction::Close { name } => {
+                acp_cli::cli::session::sessions_close(&agent, &cwd, name.as_deref())?;
+                Ok(0)
+            }
+            SessionAction::Show { name } => {
+                acp_cli::cli::session::sessions_show(&agent, &cwd, name.as_deref())?;
+                Ok(0)
+            }
+            SessionAction::History { name } => {
+                acp_cli::cli::session::sessions_history(&agent, &cwd, name.as_deref())?;
+                Ok(0)
+            }
         },
         Some(Commands::Exec { ref prompt }) => {
             let stdin_is_tty = std::io::stdin().is_terminal();
