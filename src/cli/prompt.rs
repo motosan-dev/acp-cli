@@ -9,6 +9,7 @@ use crate::output::OutputRenderer;
 use crate::output::json::JsonRenderer;
 use crate::output::quiet::QuietRenderer;
 use crate::output::text::TextRenderer;
+use crate::queue::client::QueueClient;
 use crate::queue::ipc::start_ipc_server;
 use crate::queue::lease::LeaseFile;
 use crate::queue::owner::QueueOwner;
@@ -220,19 +221,58 @@ pub async fn run_prompt(
 
     // Check if a queue owner already exists for this session.
     // Use the lease file (with heartbeat + PID liveness check) for reliable
-    // ownership detection. If a valid lease exists, the client path (#15) will
-    // handle connecting — for now, print a placeholder message.
+    // ownership detection. If a valid lease exists, connect as a queue client
+    // instead of starting a new bridge.
     if let Some(lease) = LeaseFile::read(&key)
         && lease.is_valid(queue_ttl_secs)
     {
-        eprintln!(
-            "Queue owner already running (pid {}), use queue client to connect.",
-            lease.pid
-        );
-        return Ok(0);
+        match QueueClient::connect(&key).await {
+            Ok(mut client) => {
+                renderer.session_info("Connected to queue owner");
+                let result = client
+                    .prompt(vec![prompt_text.clone()], &mut *renderer, &permission_mode)
+                    .await;
+                renderer.done();
+
+                // Log conversation history (best-effort).
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let user_entry = ConversationEntry {
+                    role: "user".to_string(),
+                    content: prompt_text,
+                    timestamp: now,
+                };
+                let _ = append_entry(&key, &user_entry);
+
+                if let Ok(ref pr) = result
+                    && !pr.content.is_empty()
+                {
+                    let assistant_entry = ConversationEntry {
+                        role: "assistant".to_string(),
+                        content: pr.content.clone(),
+                        timestamp: now,
+                    };
+                    let _ = append_entry(&key, &assistant_entry);
+                }
+
+                return result.map(|_| 0);
+            }
+            Err(e) => {
+                // Socket connection failed despite valid lease.
+                // Fall through to become a new queue owner (owner may have
+                // crashed after writing the lease).
+                renderer.session_info(&format!(
+                    "Could not connect to queue owner (pid {}): {e}; starting new session",
+                    lease.pid
+                ));
+            }
+        }
     }
 
     // --- Become the queue owner ---
+
 
     // Write PID file so `cancel` and `status` commands can find us.
     // The guard removes it automatically when this function returns.
