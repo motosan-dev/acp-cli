@@ -87,6 +87,18 @@ pub enum Commands {
     Cancel,
     /// Show status of the current session (running/idle/closed)
     Status,
+    /// Set the session mode (e.g. "code", "plan", "chat")
+    SetMode {
+        /// Mode identifier to set
+        mode: String,
+    },
+    /// Set a session configuration option
+    Set {
+        /// Configuration key
+        key: String,
+        /// Configuration value
+        value: String,
+    },
 }
 
 #[derive(Subcommand)]

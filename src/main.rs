@@ -91,6 +91,16 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
             acp_cli::cli::session::session_status(&agent, &cwd, session_name)?;
             Ok(0)
         }
+        Some(Commands::SetMode { ref mode }) => {
+            let session_name = cli.session.as_deref();
+            acp_cli::cli::session::set_mode(&agent, &cwd, session_name, mode).await?;
+            Ok(0)
+        }
+        Some(Commands::Set { ref key, ref value }) => {
+            let session_name = cli.session.as_deref();
+            acp_cli::cli::session::set_config(&agent, &cwd, session_name, key, value).await?;
+            Ok(0)
+        }
         Some(Commands::Exec { ref prompt }) => {
             let stdin_is_tty = std::io::stdin().is_terminal();
             let prompt_text = resolve_prompt(cli.file.as_deref(), prompt, stdin_is_tty)?;

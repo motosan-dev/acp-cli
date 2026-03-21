@@ -9,4 +9,13 @@ pub enum BridgeCommand {
     },
     Cancel,
     Shutdown,
+    SetMode {
+        mode: String,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    SetConfig {
+        key: String,
+        value: String,
+        reply: oneshot::Sender<Result<()>>,
+    },
 }
