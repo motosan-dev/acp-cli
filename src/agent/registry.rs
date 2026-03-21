@@ -21,93 +21,119 @@ pub struct AgentOverride {
 pub fn default_registry() -> HashMap<String, AgentEntry> {
     let mut m = HashMap::new();
 
+    // --- Agents with npm ACP adapters ---
     m.insert(
         "claude".into(),
         AgentEntry {
             command: "npx".into(),
-            args: vec!["-y".into(), "@anthropic-ai/claude-code-acp@latest".into()],
-            description: "Claude Code (Anthropic)".into(),
+            args: vec!["-y".into(), "@zed-industries/claude-agent-acp".into()],
+            description: "Claude Code via ACP bridge".into(),
         },
     );
-
     m.insert(
         "codex".into(),
         AgentEntry {
             command: "npx".into(),
-            args: vec!["-y".into(), "@openai/codex-acp@latest".into()],
-            description: "Codex (OpenAI)".into(),
+            args: vec!["-y".into(), "@zed-industries/codex-acp".into()],
+            description: "OpenAI Codex CLI".into(),
         },
     );
-
-    m.insert(
-        "gemini".into(),
-        AgentEntry {
-            command: "npx".into(),
-            args: vec!["-y".into(), "@anthropic-ai/gemini-acp@latest".into()],
-            description: "Gemini (Google)".into(),
-        },
-    );
-
     m.insert(
         "pi".into(),
         AgentEntry {
             command: "npx".into(),
-            args: vec!["-y".into(), "@anthropic-ai/pi-acp@latest".into()],
-            description: "Pi (Inflection)".into(),
+            args: vec!["-y".into(), "pi-acp".into()],
+            description: "Pi Coding Agent".into(),
         },
     );
-
     m.insert(
-        "openclaw".into(),
+        "kilocode".into(),
         AgentEntry {
             command: "npx".into(),
-            args: vec!["-y".into(), "@anthropic-ai/openclaw-acp@latest".into()],
-            description: "OpenClaw".into(),
+            args: vec!["-y".into(), "@kilocode/cli".into(), "acp".into()],
+            description: "Kilocode".into(),
         },
     );
-
-    m.insert(
-        "goose".into(),
-        AgentEntry {
-            command: "npx".into(),
-            args: vec!["-y".into(), "@anthropic-ai/goose-acp@latest".into()],
-            description: "Goose (Block)".into(),
-        },
-    );
-
-    m.insert(
-        "kiro".into(),
-        AgentEntry {
-            command: "npx".into(),
-            args: vec!["-y".into(), "@anthropic-ai/kiro-acp@latest".into()],
-            description: "Kiro (AWS)".into(),
-        },
-    );
-
     m.insert(
         "opencode".into(),
         AgentEntry {
             command: "npx".into(),
-            args: vec!["-y".into(), "@anthropic-ai/opencode-acp@latest".into()],
+            args: vec!["-y".into(), "opencode-ai".into(), "acp".into()],
             description: "OpenCode".into(),
         },
     );
 
+    // --- Agents with native ACP support ---
     m.insert(
-        "copilot".into(),
+        "gemini".into(),
         AgentEntry {
-            command: "npx".into(),
-            args: vec!["-y".into(), "@anthropic-ai/copilot-acp@latest".into()],
-            description: "Copilot (GitHub)".into(),
+            command: "gemini".into(),
+            args: vec!["--acp".into()],
+            description: "Google Gemini CLI".into(),
         },
     );
-
+    m.insert(
+        "openclaw".into(),
+        AgentEntry {
+            command: "openclaw".into(),
+            args: vec!["acp".into()],
+            description: "OpenClaw".into(),
+        },
+    );
     m.insert(
         "cursor".into(),
         AgentEntry {
-            command: "npx".into(),
-            args: vec!["-y".into(), "@anthropic-ai/cursor-acp@latest".into()],
+            command: "cursor-agent".into(),
+            args: vec!["acp".into()],
             description: "Cursor".into(),
+        },
+    );
+    m.insert(
+        "copilot".into(),
+        AgentEntry {
+            command: "copilot".into(),
+            args: vec!["--acp".into(), "--stdio".into()],
+            description: "GitHub Copilot".into(),
+        },
+    );
+    m.insert(
+        "kiro".into(),
+        AgentEntry {
+            command: "kiro-cli".into(),
+            args: vec!["acp".into()],
+            description: "Kiro CLI (AWS)".into(),
+        },
+    );
+    m.insert(
+        "kimi".into(),
+        AgentEntry {
+            command: "kimi".into(),
+            args: vec!["acp".into()],
+            description: "Kimi CLI".into(),
+        },
+    );
+    m.insert(
+        "qwen".into(),
+        AgentEntry {
+            command: "qwen".into(),
+            args: vec!["--acp".into()],
+            description: "Qwen Code".into(),
+        },
+    );
+    m.insert(
+        "droid".into(),
+        AgentEntry {
+            command: "droid".into(),
+            args: vec!["exec".into(), "--output-format".into(), "acp".into()],
+            description: "Factory Droid".into(),
+        },
+    );
+    m.insert(
+        "goose".into(),
+        AgentEntry {
+            command: "goose".into(),
+            args: vec!["acp".into()],
+            description: "Goose (Block)".into(),
         },
     );
 
