@@ -23,8 +23,6 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
-    let config = AcpCliConfig::load();
-
     // Resolve working directory
     let cwd = cli.cwd.clone().unwrap_or_else(|| {
         std::env::current_dir()
@@ -32,6 +30,11 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
             .to_string_lossy()
             .to_string()
     });
+
+    // Load global config, then merge project-level overrides
+    let global = AcpCliConfig::load();
+    let project = AcpCliConfig::load_project(std::path::Path::new(&cwd));
+    let config = global.merge(project);
 
     // Resolve agent name: explicit flag > positional > config default > "claude"
     let agent = cli
