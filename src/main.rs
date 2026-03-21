@@ -1,8 +1,10 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use clap::Parser;
 
 use acp_cli::agent::registry::{default_registry, resolve_agent};
+use acp_cli::cli::prompt_source::resolve_prompt;
 use acp_cli::cli::{Cli, Commands, ConfigAction, SessionAction};
 use acp_cli::client::permissions::PermissionMode;
 use acp_cli::config::AcpCliConfig;
@@ -21,8 +23,6 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
-    let config = AcpCliConfig::load();
-
     // Resolve working directory
     let cwd = cli.cwd.clone().unwrap_or_else(|| {
         std::env::current_dir()
@@ -30,6 +30,11 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
             .to_string_lossy()
             .to_string()
     });
+
+    // Load global config, then merge project-level overrides
+    let global = AcpCliConfig::load();
+    let project = AcpCliConfig::load_project(std::path::Path::new(&cwd));
+    let config = global.merge(project);
 
     // Resolve agent name: explicit flag > positional > config default > "claude"
     let agent = cli
@@ -65,7 +70,8 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
             }
         },
         Some(Commands::Exec { ref prompt }) => {
-            let prompt_text = prompt.join(" ");
+            let stdin_is_tty = std::io::stdin().is_terminal();
+            let prompt_text = resolve_prompt(cli.file.as_deref(), prompt, stdin_is_tty)?;
             if prompt_text.is_empty() {
                 return Err(acp_cli::error::AcpCliError::Usage(
                     "exec requires a prompt".into(),
@@ -87,11 +93,15 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
             .await
         }
         None => {
-            // Implicit prompt mode: if prompt words given, run prompt; otherwise show help
-            if !cli.prompt.is_empty() || cli.agent.is_some() {
-                let prompt_text = cli.prompt.join(" ");
+            let stdin_is_tty = std::io::stdin().is_terminal();
+            let has_file_flag = cli.file.is_some();
+            let has_piped_stdin = !stdin_is_tty && cli.prompt.is_empty() && !has_file_flag;
+
+            // Implicit prompt mode: file flag, piped stdin, positional args, or agent specified
+            if !cli.prompt.is_empty() || cli.agent.is_some() || has_file_flag || has_piped_stdin {
+                let prompt_text = resolve_prompt(cli.file.as_deref(), &cli.prompt, stdin_is_tty)?;
                 if prompt_text.is_empty() {
-                    // Agent specified but no prompt text — show help for now
+                    // Agent specified but no prompt text -- show help
                     use clap::CommandFactory;
                     Cli::command().print_help().ok();
                     println!();
