@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::bridge::events::{BridgeEvent, PromptResult};
 use crate::bridge::{AcpBridge, BridgeCancelHandle};
@@ -9,6 +9,7 @@ use crate::output::OutputRenderer;
 use crate::output::json::JsonRenderer;
 use crate::output::quiet::QuietRenderer;
 use crate::output::text::TextRenderer;
+use crate::session::history::{ConversationEntry, append_entry};
 use crate::session::persistence::SessionRecord;
 use crate::session::scoping::{find_git_root, session_dir, session_key};
 
@@ -21,11 +22,17 @@ fn make_renderer(output_format: &str) -> Box<dyn OutputRenderer> {
     }
 }
 
+/// Result from the event loop, including the exit code and collected assistant text.
+struct EventLoopResult {
+    exit_code: i32,
+    assistant_text: String,
+}
+
 /// Core event loop shared by `run_prompt` and `run_exec`.
 ///
 /// Drives the bridge's event channel concurrently with the prompt reply oneshot.
 /// Handles Ctrl-C (graceful cancel on first press, force quit on second) and
-/// enforces an optional timeout.
+/// enforces an optional timeout. Collects all TextChunk content for conversation logging.
 async fn event_loop(
     evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<BridgeEvent>,
     prompt_reply: tokio::sync::oneshot::Receiver<Result<PromptResult>>,
@@ -33,8 +40,9 @@ async fn event_loop(
     renderer: &mut Box<dyn OutputRenderer>,
     permission_mode: &PermissionMode,
     timeout_secs: Option<u64>,
-) -> Result<i32> {
+) -> Result<EventLoopResult> {
     let mut cancel_sent = false;
+    let mut collected_text = String::new();
 
     // Timeout: either sleep for the given duration, or pend forever.
     let timeout_fut = async {
@@ -50,7 +58,10 @@ async fn event_loop(
         tokio::select! {
             event = evt_rx.recv() => {
                 match event {
-                    Some(BridgeEvent::TextChunk { text }) => renderer.text_chunk(&text),
+                    Some(BridgeEvent::TextChunk { text }) => {
+                        collected_text.push_str(&text);
+                        renderer.text_chunk(&text);
+                    }
                     Some(BridgeEvent::ToolUse { name }) => renderer.tool_status(&name),
                     Some(BridgeEvent::PermissionRequest { tool, options, reply }) => {
                         let decision = resolve_permission(&tool, &options, permission_mode);
@@ -82,15 +93,15 @@ async fn event_loop(
                 // Prompt RPC completed (oneshot reply from bridge thread).
                 renderer.done();
                 return match result {
-                    Ok(Ok(_)) => Ok(0),
+                    Ok(Ok(_)) => Ok(EventLoopResult { exit_code: 0, assistant_text: collected_text }),
                     Ok(Err(e)) => {
                         renderer.error(&e.to_string());
-                        Ok(e.exit_code())
+                        Ok(EventLoopResult { exit_code: e.exit_code(), assistant_text: collected_text })
                     }
                     Err(_) => {
                         // Oneshot sender dropped — bridge died unexpectedly
                         renderer.error("bridge connection lost");
-                        Ok(1)
+                        Ok(EventLoopResult { exit_code: 1, assistant_text: collected_text })
                     }
                 };
             }
@@ -113,7 +124,10 @@ async fn event_loop(
     }
 
     renderer.done();
-    Ok(0)
+    Ok(EventLoopResult {
+        exit_code: 0,
+        assistant_text: collected_text,
+    })
 }
 
 /// Run an interactive or piped prompt session.
@@ -164,10 +178,10 @@ pub async fn run_prompt(
     let cancel = bridge.cancel_handle();
 
     // Send prompt (get oneshot receiver without blocking)
-    let prompt_reply = bridge.send_prompt(vec![prompt_text]).await?;
+    let prompt_reply = bridge.send_prompt(vec![prompt_text.clone()]).await?;
 
     // Run event loop (borrows evt_rx mutably; cancel handle is separate)
-    let result = event_loop(
+    let loop_result = event_loop(
         &mut bridge.evt_rx,
         prompt_reply,
         &cancel,
@@ -178,7 +192,32 @@ pub async fn run_prompt(
     .await;
 
     let _ = bridge.shutdown().await;
-    result
+
+    // Log conversation history (best-effort, don't fail the prompt on log errors)
+    if let Ok(ref res) = loop_result {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let user_entry = ConversationEntry {
+            role: "user".to_string(),
+            content: prompt_text,
+            timestamp: now,
+        };
+        let _ = append_entry(&key, &user_entry);
+
+        if !res.assistant_text.is_empty() {
+            let assistant_entry = ConversationEntry {
+                role: "assistant".to_string(),
+                content: res.assistant_text.clone(),
+                timestamp: now,
+            };
+            let _ = append_entry(&key, &assistant_entry);
+        }
+    }
+
+    loop_result.map(|r| r.exit_code)
 }
 
 /// Run a non-interactive exec command (no session persistence).
@@ -212,5 +251,5 @@ pub async fn run_exec(
     .await;
 
     let _ = bridge.shutdown().await;
-    result
+    result.map(|r| r.exit_code)
 }

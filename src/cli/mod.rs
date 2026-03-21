@@ -90,6 +90,24 @@ pub enum SessionAction {
     },
     /// List existing sessions
     List,
+    /// Close a session
+    Close {
+        /// Session name
+        #[arg(short = 's', long)]
+        name: Option<String>,
+    },
+    /// Show session details
+    Show {
+        /// Session name
+        #[arg(short = 's', long)]
+        name: Option<String>,
+    },
+    /// Show conversation history
+    History {
+        /// Session name
+        #[arg(short = 's', long)]
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

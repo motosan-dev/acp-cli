@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{AcpCliError, Result};
+use crate::session::history::load_history;
 use crate::session::persistence::SessionRecord;
 use crate::session::scoping::{find_git_root, session_dir, session_key};
 
@@ -103,4 +104,132 @@ pub fn sessions_list(agent: Option<&str>, cwd: Option<&str>) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Close a session by setting its `closed` flag to true.
+pub fn sessions_close(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> {
+    let cwd_path = Path::new(cwd);
+    let resolved_dir = find_git_root(cwd_path).unwrap_or_else(|| cwd_path.to_path_buf());
+    let dir_str = resolved_dir.to_string_lossy();
+    let session_name = name.unwrap_or("");
+    let key = session_key(agent, &dir_str, session_name);
+
+    let path = session_dir().join(format!("{key}.json"));
+    let mut record = match SessionRecord::load(&path).map_err(AcpCliError::Io)? {
+        Some(r) => r,
+        None => {
+            return Err(AcpCliError::NoSession {
+                agent: agent.to_string(),
+                cwd: cwd.to_string(),
+            });
+        }
+    };
+
+    if record.closed {
+        println!("Session is already closed.");
+        return Ok(());
+    }
+
+    record.closed = true;
+    record.save(&path).map_err(AcpCliError::Io)?;
+
+    let short_id = &record.id[..12.min(record.id.len())];
+    println!("Session {short_id} closed.");
+    Ok(())
+}
+
+/// Show detailed information about a session.
+pub fn sessions_show(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> {
+    let cwd_path = Path::new(cwd);
+    let resolved_dir = find_git_root(cwd_path).unwrap_or_else(|| cwd_path.to_path_buf());
+    let dir_str = resolved_dir.to_string_lossy();
+    let session_name = name.unwrap_or("");
+    let key = session_key(agent, &dir_str, session_name);
+
+    let path = session_dir().join(format!("{key}.json"));
+    let record = match SessionRecord::load(&path).map_err(AcpCliError::Io)? {
+        Some(r) => r,
+        None => {
+            return Err(AcpCliError::NoSession {
+                agent: agent.to_string(),
+                cwd: cwd.to_string(),
+            });
+        }
+    };
+
+    let status = if record.closed { "closed" } else { "open" };
+    let created = format_timestamp(record.created_at);
+
+    println!("ID:         {}", record.id);
+    println!("Agent:      {}", record.agent);
+    println!("CWD:        {}", record.cwd.display());
+    if let Some(ref n) = record.name {
+        println!("Name:       {n}");
+    }
+    println!("Created at: {created}");
+    println!("Status:     {status}");
+
+    Ok(())
+}
+
+/// Show conversation history for a session.
+pub fn sessions_history(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> {
+    let cwd_path = Path::new(cwd);
+    let resolved_dir = find_git_root(cwd_path).unwrap_or_else(|| cwd_path.to_path_buf());
+    let dir_str = resolved_dir.to_string_lossy();
+    let session_name = name.unwrap_or("");
+    let key = session_key(agent, &dir_str, session_name);
+
+    // Verify the session exists
+    let sess_path = session_dir().join(format!("{key}.json"));
+    if SessionRecord::load(&sess_path)
+        .map_err(AcpCliError::Io)?
+        .is_none()
+    {
+        return Err(AcpCliError::NoSession {
+            agent: agent.to_string(),
+            cwd: cwd.to_string(),
+        });
+    }
+
+    let entries = load_history(&key).map_err(AcpCliError::Io)?;
+
+    if entries.is_empty() {
+        println!("No conversation history.");
+        return Ok(());
+    }
+
+    for entry in &entries {
+        let ts = format_timestamp(entry.timestamp);
+        println!("[{ts}] {}:", entry.role);
+        println!("{}", entry.content);
+        println!();
+    }
+
+    Ok(())
+}
+
+/// Format a Unix timestamp as `YYYY-MM-DD HH:MM:SS`.
+fn format_timestamp(ts: u64) -> String {
+    let secs = ts;
+    // Simple UTC formatting without external crate
+    let days_since_epoch = secs / 86400;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+
+    // Civil date from days since 1970-01-01 (algorithm from Howard Hinnant)
+    let z = days_since_epoch as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02} {hours:02}:{minutes:02}:{seconds:02}")
 }
