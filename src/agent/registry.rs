@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// A built-in or discovered agent entry in the registry.
@@ -10,7 +10,7 @@ pub struct AgentEntry {
 }
 
 /// User-provided override for an agent's command and args (from config file).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentOverride {
     pub command: String,
     #[serde(default)]

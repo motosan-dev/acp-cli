@@ -32,11 +32,7 @@ impl AcpBridge {
     ///
     /// The agent is launched via `command` with the given `args`, and the working
     /// directory for the ACP session is set to `cwd`.
-    pub async fn start(
-        command: String,
-        args: Vec<String>,
-        cwd: PathBuf,
-    ) -> Result<Self> {
+    pub async fn start(command: String, args: Vec<String>, cwd: PathBuf) -> Result<Self> {
         let (cmd_tx, cmd_rx) = mpsc::channel::<BridgeCommand>(16);
         let (evt_tx, evt_rx) = mpsc::unbounded_channel::<BridgeEvent>();
 
@@ -129,14 +125,10 @@ async fn acp_thread_main(
         evt_tx: evt_tx.clone(),
     };
 
-    let (conn, handle_io) = acp::ClientSideConnection::new(
-        client,
-        stdin.compat_write(),
-        stdout.compat(),
-        |fut| {
+    let (conn, handle_io) =
+        acp::ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |fut| {
             tokio::task::spawn_local(fut);
-        },
-    );
+        });
 
     // Drive the I/O loop in the background on the local task set.
     tokio::task::spawn_local(async move {
@@ -147,8 +139,9 @@ async fn acp_thread_main(
 
     // 2. Initialize
     conn.initialize(
-        acp::InitializeRequest::new(acp::ProtocolVersion::V1)
-            .client_info(acp::Implementation::new("acp-cli", env!("CARGO_PKG_VERSION"))),
+        acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(
+            acp::Implementation::new("acp-cli", env!("CARGO_PKG_VERSION")),
+        ),
     )
     .await
     .map_err(|e| AcpCliError::Connection(format!("initialize: {e}")))?;
@@ -171,14 +164,11 @@ async fn acp_thread_main(
                 let content_blocks: Vec<acp::ContentBlock> =
                     messages.into_iter().map(|m| m.into()).collect();
                 let result = conn
-                    .prompt(acp::PromptRequest::new(
-                        session_id.clone(),
-                        content_blocks,
-                    ))
+                    .prompt(acp::PromptRequest::new(session_id.clone(), content_blocks))
                     .await;
                 match result {
                     Ok(response) => {
-                        let stop_reason = serde_json::to_value(&response.stop_reason)
+                        let stop_reason = serde_json::to_value(response.stop_reason)
                             .ok()
                             .and_then(|v| v.as_str().map(String::from))
                             .unwrap_or_else(|| "unknown".to_string());

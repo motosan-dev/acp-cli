@@ -1,10 +1,10 @@
 use crate::agent::registry::AgentOverride;
 use crate::client::permissions::PermissionMode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct AcpCliConfig {
     pub default_agent: Option<String>,
     pub default_permissions: Option<PermissionMode>,
@@ -17,7 +17,7 @@ impl AcpCliConfig {
     pub fn load() -> Self {
         dirs::home_dir()
             .map(|h| h.join(".acp-cli").join("config.json"))
-            .map(|p| Self::load_from(p))
+            .map(Self::load_from)
             .unwrap_or_default()
     }
 
