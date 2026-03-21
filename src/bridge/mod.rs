@@ -27,6 +27,23 @@ pub struct AcpBridge {
     handle: JoinHandle<std::result::Result<(), AcpCliError>>,
 }
 
+/// Handle used to send cancel/shutdown commands independently of `evt_rx`.
+///
+/// Obtained via `AcpBridge::cancel_handle()` so the caller can borrow `evt_rx`
+/// mutably while still being able to send cancel commands.
+#[derive(Clone)]
+pub struct BridgeCancelHandle {
+    cmd_tx: mpsc::Sender<BridgeCommand>,
+}
+
+impl BridgeCancelHandle {
+    /// Request cancellation of the current prompt (best-effort).
+    pub async fn cancel(&self) -> Result<()> {
+        let _ = self.cmd_tx.send(BridgeCommand::Cancel).await;
+        Ok(())
+    }
+}
+
 impl AcpBridge {
     /// Start the ACP bridge by spawning the agent process in a background thread.
     ///
@@ -52,12 +69,35 @@ impl AcpBridge {
         })
     }
 
+    /// Obtain a lightweight cancel handle that can be used while `evt_rx` is
+    /// borrowed mutably.
+    pub fn cancel_handle(&self) -> BridgeCancelHandle {
+        BridgeCancelHandle {
+            cmd_tx: self.cmd_tx.clone(),
+        }
+    }
+
     /// Send a prompt to the agent and wait for the result.
     ///
     /// Text content is streamed in real-time via `BridgeEvent::TextChunk` events
     /// on `evt_rx`. The returned `PromptResult.content` will be empty because
     /// the main thread is expected to collect content from those events.
     pub async fn prompt(&self, messages: Vec<String>) -> Result<PromptResult> {
+        let reply_rx = self.send_prompt(messages).await?;
+        reply_rx
+            .await
+            .map_err(|_| AcpCliError::Connection("bridge reply dropped".into()))?
+    }
+
+    /// Send a prompt command without awaiting the reply.
+    ///
+    /// Returns a oneshot receiver that will resolve when the prompt completes.
+    /// This allows the caller to drive `evt_rx` concurrently with waiting for
+    /// the prompt result, avoiding borrow conflicts on `self`.
+    pub async fn send_prompt(
+        &self,
+        messages: Vec<String>,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<PromptResult>>> {
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
         self.cmd_tx
             .send(BridgeCommand::Prompt {
@@ -66,9 +106,7 @@ impl AcpBridge {
             })
             .await
             .map_err(|_| AcpCliError::Connection("bridge channel closed".into()))?;
-        reply_rx
-            .await
-            .map_err(|_| AcpCliError::Connection("bridge reply dropped".into()))?
+        Ok(reply_rx)
     }
 
     /// Request cancellation of the current prompt (best-effort).

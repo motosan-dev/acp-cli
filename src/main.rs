@@ -1,6 +1,10 @@
+use std::path::PathBuf;
+
 use clap::Parser;
 
+use acp_cli::agent::registry::{default_registry, resolve_agent};
 use acp_cli::cli::{Cli, Commands, ConfigAction, SessionAction};
+use acp_cli::client::permissions::PermissionMode;
 use acp_cli::config::AcpCliConfig;
 
 #[tokio::main]
@@ -60,42 +64,53 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
                 Ok(0)
             }
         },
-        Some(Commands::Exec { prompt }) => {
+        Some(Commands::Exec { ref prompt }) => {
+            let prompt_text = prompt.join(" ");
+            if prompt_text.is_empty() {
+                return Err(acp_cli::error::AcpCliError::Usage(
+                    "exec requires a prompt".into(),
+                ));
+            }
+
+            let (command, args) = resolve_agent_command(&agent, &config);
+            let permission_mode = resolve_permission_mode(&cli, &config);
+
             acp_cli::cli::prompt::run_exec(
-                &agent,
-                &prompt,
-                &cwd,
-                cli.session.as_deref(),
+                command,
+                args,
+                PathBuf::from(&cwd),
+                prompt_text,
+                permission_mode,
                 &cli.format,
-                cli.timeout,
-                cli.verbose,
+                cli.timeout.or(config.timeout),
             )
             .await
         }
         None => {
             // Implicit prompt mode: if prompt words given, run prompt; otherwise show help
-            if !cli.prompt.is_empty() {
+            if !cli.prompt.is_empty() || cli.agent.is_some() {
+                let prompt_text = cli.prompt.join(" ");
+                if prompt_text.is_empty() {
+                    // Agent specified but no prompt text — show help for now
+                    use clap::CommandFactory;
+                    Cli::command().print_help().ok();
+                    println!();
+                    return Ok(0);
+                }
+
+                let (command, args) = resolve_agent_command(&agent, &config);
+                let permission_mode = resolve_permission_mode(&cli, &config);
+
                 acp_cli::cli::prompt::run_prompt(
                     &agent,
-                    &cli.prompt,
-                    &cwd,
-                    cli.session.as_deref(),
+                    command,
+                    args,
+                    PathBuf::from(&cwd),
+                    prompt_text,
+                    cli.session.clone(),
+                    permission_mode,
                     &cli.format,
-                    cli.timeout,
-                    cli.verbose,
-                )
-                .await
-            } else if cli.agent.is_some() {
-                // Agent specified but no prompt text and no subcommand
-                // Treat as interactive mode (stub for now)
-                acp_cli::cli::prompt::run_prompt(
-                    &agent,
-                    &[],
-                    &cwd,
-                    cli.session.as_deref(),
-                    &cli.format,
-                    cli.timeout,
-                    cli.verbose,
+                    cli.timeout.or(config.timeout),
                 )
                 .await
             } else {
@@ -106,5 +121,28 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
                 Ok(0)
             }
         }
+    }
+}
+
+/// Resolve agent name to (command, args) using registry + config overrides.
+fn resolve_agent_command(agent: &str, config: &AcpCliConfig) -> (String, Vec<String>) {
+    let registry = default_registry();
+    let overrides = config.agents.as_ref().cloned().unwrap_or_default();
+    resolve_agent(agent, &registry, &overrides)
+}
+
+/// Determine permission mode from CLI flags, falling back to config default.
+fn resolve_permission_mode(cli: &Cli, config: &AcpCliConfig) -> PermissionMode {
+    if cli.approve_all {
+        PermissionMode::ApproveAll
+    } else if cli.deny_all {
+        PermissionMode::DenyAll
+    } else if cli.approve_reads {
+        PermissionMode::ApproveReads
+    } else {
+        config
+            .default_permissions
+            .clone()
+            .unwrap_or(PermissionMode::ApproveReads)
     }
 }
