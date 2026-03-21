@@ -9,6 +9,7 @@ use crate::output::OutputRenderer;
 use crate::output::json::JsonRenderer;
 use crate::output::quiet::QuietRenderer;
 use crate::output::text::TextRenderer;
+use crate::queue::client::QueueClient;
 use crate::session::history::{ConversationEntry, append_entry};
 use crate::session::persistence::SessionRecord;
 use crate::session::pid;
@@ -208,6 +209,54 @@ pub async fn run_prompt(
 
     if is_resume {
         renderer.session_info(&format!("resuming session {}", &key[..12.min(key.len())]));
+    }
+
+    // Check if a queue owner already exists for this session.
+    // If a live process owns the session, connect as a queue client
+    // instead of starting a new bridge.
+    if let Some(_owner_pid) = pid::read_pid(&key) {
+        match QueueClient::connect(&key).await {
+            Ok(mut client) => {
+                renderer.session_info("Connected to queue owner");
+                let result = client
+                    .prompt(vec![prompt_text.clone()], &mut *renderer, &permission_mode)
+                    .await;
+                renderer.done();
+
+                // Log conversation history (best-effort).
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let user_entry = ConversationEntry {
+                    role: "user".to_string(),
+                    content: prompt_text,
+                    timestamp: now,
+                };
+                let _ = append_entry(&key, &user_entry);
+
+                if let Ok(ref pr) = result
+                    && !pr.content.is_empty()
+                {
+                    let assistant_entry = ConversationEntry {
+                        role: "assistant".to_string(),
+                        content: pr.content.clone(),
+                        timestamp: now,
+                    };
+                    let _ = append_entry(&key, &assistant_entry);
+                }
+
+                return result.map(|_| 0);
+            }
+            Err(e) => {
+                // Socket connection failed despite PID being alive.
+                // Fall through to start a new bridge (owner may not have
+                // opened its socket yet, or it crashed after PID write).
+                renderer.session_info(&format!(
+                    "Could not connect to queue owner: {e}; starting new session"
+                ));
+            }
+        }
     }
 
     // Write PID file so `cancel` and `status` commands can find us.
