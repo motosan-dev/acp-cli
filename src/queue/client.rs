@@ -92,6 +92,9 @@ impl QueueClient {
                 Some(QueueResponse::Error { message }) => {
                     return Err(AcpCliError::Agent(message));
                 }
+                Some(QueueResponse::Ok) => {
+                    // Acknowledgement for non-prompt commands; skip.
+                }
                 None => {
                     // Stream closed unexpectedly.
                     return Err(AcpCliError::Connection(
@@ -137,6 +140,57 @@ impl QueueClient {
                 // Skip any other messages that arrive before the Queued ack.
                 _ => continue,
             }
+        }
+    }
+
+    /// Send a set-mode request to the queue owner.
+    pub async fn set_mode(&mut self, mode: &str) -> Result<()> {
+        let request = QueueRequest::SetMode {
+            mode: mode.to_string(),
+        };
+        send_message(&mut self.stream, &request)
+            .await
+            .map_err(|e| AcpCliError::Connection(format!("failed to send set-mode: {e}")))?;
+
+        let response: Option<QueueResponse> = recv_message(&mut self.reader)
+            .await
+            .map_err(|e| AcpCliError::Connection(format!("failed to read response: {e}")))?;
+
+        match response {
+            Some(QueueResponse::Ok) => {
+                println!("Mode set to: {mode}");
+                Ok(())
+            }
+            Some(QueueResponse::Error { message }) => Err(AcpCliError::Agent(message)),
+            _ => Err(AcpCliError::Connection(
+                "unexpected response to set-mode request".to_string(),
+            )),
+        }
+    }
+
+    /// Send a set-config request to the queue owner.
+    pub async fn set_config(&mut self, key: &str, value: &str) -> Result<()> {
+        let request = QueueRequest::SetConfig {
+            key: key.to_string(),
+            value: value.to_string(),
+        };
+        send_message(&mut self.stream, &request)
+            .await
+            .map_err(|e| AcpCliError::Connection(format!("failed to send set-config: {e}")))?;
+
+        let response: Option<QueueResponse> = recv_message(&mut self.reader)
+            .await
+            .map_err(|e| AcpCliError::Connection(format!("failed to read response: {e}")))?;
+
+        match response {
+            Some(QueueResponse::Ok) => {
+                println!("Config set: {key} = {value}");
+                Ok(())
+            }
+            Some(QueueResponse::Error { message }) => Err(AcpCliError::Agent(message)),
+            _ => Err(AcpCliError::Connection(
+                "unexpected response to set-config request".to_string(),
+            )),
         }
     }
 

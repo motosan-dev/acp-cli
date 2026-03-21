@@ -10,6 +10,13 @@ pub enum QueueRequest {
     },
     Cancel,
     Status,
+    SetMode {
+        mode: String,
+    },
+    SetConfig {
+        key: String,
+        value: String,
+    },
 }
 
 /// Message from queue owner to client.
@@ -36,4 +43,5 @@ pub enum QueueResponse {
         reply_id: String,
         position: usize,
     },
+    Ok,
 }

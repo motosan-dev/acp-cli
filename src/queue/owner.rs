@@ -283,6 +283,36 @@ impl QueueOwner {
                 )
                 .await;
             }
+            Some(QueueRequest::SetMode { mode }) => match self.bridge.set_mode(mode).await {
+                Ok(()) => {
+                    let _ = send_message(&mut write_stream, &QueueResponse::Ok).await;
+                }
+                Err(e) => {
+                    let _ = send_message(
+                        &mut write_stream,
+                        &QueueResponse::Error {
+                            message: e.to_string(),
+                        },
+                    )
+                    .await;
+                }
+            },
+            Some(QueueRequest::SetConfig { key, value }) => {
+                match self.bridge.set_config(key, value).await {
+                    Ok(()) => {
+                        let _ = send_message(&mut write_stream, &QueueResponse::Ok).await;
+                    }
+                    Err(e) => {
+                        let _ = send_message(
+                            &mut write_stream,
+                            &QueueResponse::Error {
+                                message: e.to_string(),
+                            },
+                        )
+                        .await;
+                    }
+                }
+            }
             None => {
                 // Client disconnected before sending a request.
             }

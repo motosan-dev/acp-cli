@@ -279,6 +279,46 @@ pub fn session_status(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> 
     Ok(())
 }
 
+/// Set the session mode by sending a request to the queue owner via IPC.
+///
+/// Requires an active session with a running queue owner process.
+pub async fn set_mode(agent: &str, cwd: &str, name: Option<&str>, mode: &str) -> Result<()> {
+    let cwd_path = Path::new(cwd);
+    let resolved_dir = find_git_root(cwd_path).unwrap_or_else(|| cwd_path.to_path_buf());
+    let dir_str = resolved_dir.to_string_lossy();
+    let session_name = name.unwrap_or("");
+    let key = session_key(agent, &dir_str, session_name);
+
+    let mut client = crate::queue::client::QueueClient::connect(&key)
+        .await
+        .map_err(|_| AcpCliError::Connection("No active session. Start a prompt first.".into()))?;
+
+    client.set_mode(mode).await
+}
+
+/// Set a session config option by sending a request to the queue owner via IPC.
+///
+/// Requires an active session with a running queue owner process.
+pub async fn set_config(
+    agent: &str,
+    cwd: &str,
+    name: Option<&str>,
+    key: &str,
+    value: &str,
+) -> Result<()> {
+    let cwd_path = Path::new(cwd);
+    let resolved_dir = find_git_root(cwd_path).unwrap_or_else(|| cwd_path.to_path_buf());
+    let dir_str = resolved_dir.to_string_lossy();
+    let session_name = name.unwrap_or("");
+    let session_key = session_key(agent, &dir_str, session_name);
+
+    let mut client = crate::queue::client::QueueClient::connect(&session_key)
+        .await
+        .map_err(|_| AcpCliError::Connection("No active session. Start a prompt first.".into()))?;
+
+    client.set_config(key, value).await
+}
+
 /// Format a Unix timestamp as `YYYY-MM-DD HH:MM:SS`.
 fn format_timestamp(ts: u64) -> String {
     let secs = ts;

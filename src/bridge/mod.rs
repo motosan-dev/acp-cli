@@ -115,6 +115,37 @@ impl AcpBridge {
         Ok(())
     }
 
+    /// Set the session mode on the ACP connection.
+    pub async fn set_mode(&self, mode: String) -> Result<()> {
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        self.cmd_tx
+            .send(BridgeCommand::SetMode {
+                mode,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| AcpCliError::Connection("bridge channel closed".into()))?;
+        reply_rx
+            .await
+            .map_err(|_| AcpCliError::Connection("bridge reply dropped".into()))?
+    }
+
+    /// Set a session config option on the ACP connection.
+    pub async fn set_config(&self, key: String, value: String) -> Result<()> {
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        self.cmd_tx
+            .send(BridgeCommand::SetConfig {
+                key,
+                value,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| AcpCliError::Connection("bridge channel closed".into()))?;
+        reply_rx
+            .await
+            .map_err(|_| AcpCliError::Connection("bridge reply dropped".into()))?
+    }
+
     /// Gracefully shut down the bridge, killing the agent process and joining
     /// the background thread.
     pub async fn shutdown(self) -> Result<()> {
@@ -227,6 +258,38 @@ async fn acp_thread_main(
             }
             BridgeCommand::Cancel => {
                 // ACP cancel not yet implemented in SDK
+            }
+            BridgeCommand::SetMode { mode, reply } => {
+                let mode_id = acp::SessionModeId::new(mode);
+                let request = acp::SetSessionModeRequest::new(session_id.clone(), mode_id);
+                match conn.set_session_mode(request).await {
+                    Ok(_) => {
+                        let _ = reply.send(Ok(()));
+                    }
+                    Err(e) => {
+                        let _ =
+                            reply.send(Err(AcpCliError::Agent(format!("set_session_mode: {e}"))));
+                    }
+                }
+            }
+            BridgeCommand::SetConfig { key, value, reply } => {
+                let config_id = acp::SessionConfigId::new(key);
+                let value_id = acp::SessionConfigValueId::new(value);
+                let request = acp::SetSessionConfigOptionRequest::new(
+                    session_id.clone(),
+                    config_id,
+                    value_id,
+                );
+                match conn.set_session_config_option(request).await {
+                    Ok(_) => {
+                        let _ = reply.send(Ok(()));
+                    }
+                    Err(e) => {
+                        let _ = reply.send(Err(AcpCliError::Agent(format!(
+                            "set_session_config_option: {e}"
+                        ))));
+                    }
+                }
             }
             BridgeCommand::Shutdown => break,
         }
