@@ -26,6 +26,7 @@ pub fn sessions_new(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> {
         name: name.map(|s| s.to_string()),
         created_at: now,
         closed: false,
+        acp_session_id: None,
     };
 
     let path = session_dir().join(format!("{key}.json"));
@@ -168,6 +169,9 @@ pub fn sessions_show(agent: &str, cwd: &str, name: Option<&str>) -> Result<()> {
     }
     println!("Created at: {created}");
     println!("Status:     {status}");
+    if let Some(ref acp_id) = record.acp_session_id {
+        println!("ACP Session: {acp_id}");
+    }
 
     Ok(())
 }
