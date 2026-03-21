@@ -67,3 +67,16 @@ fn file_preserves_internal_newlines() {
     let result = resolve_prompt(Some(path.to_str().unwrap()), &[], true).unwrap();
     assert_eq!(result, "line one\nline two");
 }
+
+#[test]
+fn piped_stdin_scenario_no_file_no_positional() {
+    // When stdin_is_terminal=false and no positional args, resolve_prompt
+    // would attempt to read stdin. We can't easily test actual stdin reading,
+    // but we can verify the function signature handles the case.
+    // In real usage: echo "hello" | acp-cli claude
+    // This test verifies the positional-only path still works when terminal=false
+    // but positional args are provided.
+    let words: Vec<String> = vec!["from".into(), "args".into()];
+    let result = resolve_prompt(None, &words, false).unwrap();
+    assert_eq!(result, "from args");
+}

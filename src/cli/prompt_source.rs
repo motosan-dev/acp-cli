@@ -99,11 +99,28 @@ mod tests {
     }
 
     #[test]
-    fn empty_positional_with_file_dash_would_read_stdin() {
-        // We can't easily test actual stdin reading in unit tests,
-        // but we can verify the function dispatches correctly by checking
-        // that --file - with positional args is an error.
+    fn file_dash_with_positional_is_error() {
         let result = resolve_prompt(Some("-"), &["extra".into()], true);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn file_trims_trailing_newlines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.txt");
+        std::fs::write(&path, "hello\n\n\n").unwrap();
+
+        let result = resolve_prompt(Some(path.to_str().unwrap()), &[], true).unwrap();
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn file_preserves_internal_newlines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prompt.txt");
+        std::fs::write(&path, "line one\nline two\n").unwrap();
+
+        let result = resolve_prompt(Some(path.to_str().unwrap()), &[], true).unwrap();
+        assert_eq!(result, "line one\nline two");
     }
 }
