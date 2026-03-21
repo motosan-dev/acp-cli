@@ -11,7 +11,29 @@ use crate::output::quiet::QuietRenderer;
 use crate::output::text::TextRenderer;
 use crate::session::history::{ConversationEntry, append_entry};
 use crate::session::persistence::SessionRecord;
+use crate::session::pid;
 use crate::session::scoping::{find_git_root, session_dir, session_key};
+
+/// RAII guard that removes the PID file when dropped, ensuring cleanup even on
+/// early returns or panics.
+struct PidGuard {
+    session_key: String,
+}
+
+impl PidGuard {
+    fn new(session_key: &str) -> std::io::Result<Self> {
+        pid::write_pid(session_key)?;
+        Ok(Self {
+            session_key: session_key.to_string(),
+        })
+    }
+}
+
+impl Drop for PidGuard {
+    fn drop(&mut self) {
+        let _ = pid::remove_pid(&self.session_key);
+    }
+}
 
 /// Build a renderer from the format string.
 fn make_renderer(output_format: &str) -> Box<dyn OutputRenderer> {
@@ -187,6 +209,13 @@ pub async fn run_prompt(
     if is_resume {
         renderer.session_info(&format!("resuming session {}", &key[..12.min(key.len())]));
     }
+
+    // Write PID file so `cancel` and `status` commands can find us.
+    // The guard removes it automatically when this function returns.
+    let _pid_guard = PidGuard::new(&key).map_err(|e| {
+        renderer.error(&format!("failed to write pid file: {e}"));
+        AcpCliError::Io(e)
+    })?;
 
     // Start bridge
     let mut bridge = AcpBridge::start(command, args, cwd).await?;
