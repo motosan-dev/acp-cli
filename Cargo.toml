@@ -1,0 +1,26 @@
+[package]
+name = "acp-cli"
+version = "0.1.0"
+edition = "2024"
+description = "Headless CLI client for the Agent Client Protocol (ACP)"
+license = "MIT"
+
+[[bin]]
+name = "acp-cli"
+path = "src/main.rs"
+
+[dependencies]
+agent-client-protocol = "0.10"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+dirs = "6"
+sha2 = "0.10"
+indicatif = "0.17"
+
+[dev-dependencies]
+tempfile = "3"
