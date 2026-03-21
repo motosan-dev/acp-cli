@@ -11,7 +11,29 @@ use crate::output::quiet::QuietRenderer;
 use crate::output::text::TextRenderer;
 use crate::session::history::{ConversationEntry, append_entry};
 use crate::session::persistence::SessionRecord;
+use crate::session::pid;
 use crate::session::scoping::{find_git_root, session_dir, session_key};
+
+/// RAII guard that removes the PID file when dropped, ensuring cleanup even on
+/// early returns or panics.
+struct PidGuard {
+    session_key: String,
+}
+
+impl PidGuard {
+    fn new(session_key: &str) -> std::io::Result<Self> {
+        pid::write_pid(session_key)?;
+        Ok(Self {
+            session_key: session_key.to_string(),
+        })
+    }
+}
+
+impl Drop for PidGuard {
+    fn drop(&mut self) {
+        let _ = pid::remove_pid(&self.session_key);
+    }
+}
 
 /// Build a renderer from the format string.
 fn make_renderer(output_format: &str) -> Box<dyn OutputRenderer> {
@@ -26,6 +48,8 @@ fn make_renderer(output_format: &str) -> Box<dyn OutputRenderer> {
 struct EventLoopResult {
     exit_code: i32,
     assistant_text: String,
+    /// The ACP session ID emitted by the bridge (if any).
+    acp_session_id: Option<String>,
 }
 
 /// Core event loop shared by `run_prompt` and `run_exec`.
@@ -43,6 +67,7 @@ async fn event_loop(
 ) -> Result<EventLoopResult> {
     let mut cancel_sent = false;
     let mut collected_text = String::new();
+    let mut acp_session_id: Option<String> = None;
 
     // Timeout: either sleep for the given duration, or pend forever.
     let timeout_fut = async {
@@ -71,6 +96,7 @@ async fn event_loop(
                         let _ = reply.send(decision);
                     }
                     Some(BridgeEvent::SessionCreated { session_id }) => {
+                        acp_session_id = Some(session_id.clone());
                         renderer.session_info(&session_id);
                     }
                     Some(BridgeEvent::PromptDone { .. }) => {
@@ -93,15 +119,15 @@ async fn event_loop(
                 // Prompt RPC completed (oneshot reply from bridge thread).
                 renderer.done();
                 return match result {
-                    Ok(Ok(_)) => Ok(EventLoopResult { exit_code: 0, assistant_text: collected_text }),
+                    Ok(Ok(_)) => Ok(EventLoopResult { exit_code: 0, assistant_text: collected_text, acp_session_id: acp_session_id.clone() }),
                     Ok(Err(e)) => {
                         renderer.error(&e.to_string());
-                        Ok(EventLoopResult { exit_code: e.exit_code(), assistant_text: collected_text })
+                        Ok(EventLoopResult { exit_code: e.exit_code(), assistant_text: collected_text, acp_session_id: acp_session_id.clone() })
                     }
                     Err(_) => {
                         // Oneshot sender dropped — bridge died unexpectedly
                         renderer.error("bridge connection lost");
-                        Ok(EventLoopResult { exit_code: 1, assistant_text: collected_text })
+                        Ok(EventLoopResult { exit_code: 1, assistant_text: collected_text, acp_session_id: acp_session_id.clone() })
                     }
                 };
             }
@@ -127,6 +153,7 @@ async fn event_loop(
     Ok(EventLoopResult {
         exit_code: 0,
         assistant_text: collected_text,
+        acp_session_id,
     })
 }
 
@@ -148,14 +175,19 @@ pub async fn run_prompt(
 ) -> Result<i32> {
     let mut renderer = make_renderer(output_format);
 
-    // Find or create session record
+    // Find or create session record.
+    // If an existing open session is found, reuse its key so conversation
+    // history accumulates across multiple runs.
     let resolved_dir = find_git_root(&cwd).unwrap_or_else(|| cwd.clone());
     let dir_str = resolved_dir.to_string_lossy();
     let sess_name = session_name.as_deref().unwrap_or("");
     let key = session_key(agent_name, &dir_str, sess_name);
 
     let sess_file = session_dir().join(format!("{key}.json"));
-    if SessionRecord::load(&sess_file).ok().flatten().is_none() {
+    let existing = SessionRecord::load(&sess_file).ok().flatten();
+    let is_resume = existing.as_ref().is_some_and(|r| !r.closed);
+
+    if existing.is_none() {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -167,11 +199,23 @@ pub async fn run_prompt(
             name: session_name,
             created_at: now,
             closed: false,
+            acp_session_id: None,
         };
         if let Err(e) = record.save(&sess_file) {
             renderer.error(&format!("failed to save session: {e}"));
         }
     }
+
+    if is_resume {
+        renderer.session_info(&format!("resuming session {}", &key[..12.min(key.len())]));
+    }
+
+    // Write PID file so `cancel` and `status` commands can find us.
+    // The guard removes it automatically when this function returns.
+    let _pid_guard = PidGuard::new(&key).map_err(|e| {
+        renderer.error(&format!("failed to write pid file: {e}"));
+        AcpCliError::Io(e)
+    })?;
 
     // Start bridge
     let mut bridge = AcpBridge::start(command, args, cwd).await?;
@@ -192,6 +236,15 @@ pub async fn run_prompt(
     .await;
 
     let _ = bridge.shutdown().await;
+
+    // Update the session record with the new ACP session ID (best-effort).
+    // Each run spawns a fresh agent, so the ACP session ID changes every time.
+    if let Ok(ref res) = loop_result
+        && let Some(ref new_acp_id) = res.acp_session_id
+        && let Ok(Some(mut record)) = SessionRecord::load(&sess_file)
+    {
+        let _ = record.update_acp_session_id(new_acp_id.clone(), &sess_file);
+    }
 
     // Log conversation history (best-effort, don't fail the prompt on log errors)
     if let Ok(ref res) = loop_result {

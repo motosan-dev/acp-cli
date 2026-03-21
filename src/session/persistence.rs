@@ -10,6 +10,9 @@ pub struct SessionRecord {
     pub name: Option<String>,
     pub created_at: u64,
     pub closed: bool,
+    /// The latest ACP session ID from the bridge (updated on each reconnect).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acp_session_id: Option<String>,
 }
 
 impl SessionRecord {
@@ -21,6 +24,12 @@ impl SessionRecord {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         std::fs::write(path, json)
+    }
+
+    /// Update the ACP session ID (for when the agent is re-spawned) and persist.
+    pub fn update_acp_session_id(&mut self, new_id: String, path: &Path) -> io::Result<()> {
+        self.acp_session_id = Some(new_id);
+        self.save(path)
     }
 
     /// Load a session record from a JSON file. Returns `None` if the file does not exist.
