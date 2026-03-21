@@ -1,4 +1,5 @@
 pub mod prompt;
+pub mod prompt_source;
 pub mod session;
 
 use clap::{Parser, Subcommand};
@@ -50,6 +51,10 @@ pub struct Cli {
     /// Override the agent command
     #[arg(long = "agent-override")]
     pub agent_override: Option<String>,
+
+    /// Read prompt from a file (use "-" for stdin)
+    #[arg(short = 'f', long = "file")]
+    pub file: Option<String>,
 
     /// Enable verbose output
     #[arg(long)]
