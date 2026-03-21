@@ -9,6 +9,9 @@ use crate::output::OutputRenderer;
 use crate::output::json::JsonRenderer;
 use crate::output::quiet::QuietRenderer;
 use crate::output::text::TextRenderer;
+use crate::queue::ipc::start_ipc_server;
+use crate::queue::lease::LeaseFile;
+use crate::queue::owner::QueueOwner;
 use crate::session::history::{ConversationEntry, append_entry};
 use crate::session::persistence::SessionRecord;
 use crate::session::pid;
@@ -160,7 +163,9 @@ async fn event_loop(
 /// Run an interactive or piped prompt session.
 ///
 /// Resolves or creates a session, starts the ACP bridge, sends the prompt, and
-/// enters the event loop with signal handling and optional timeout.
+/// enters the event loop with signal handling and optional timeout. After the
+/// first prompt completes, becomes the queue owner — listening on a Unix socket
+/// for subsequent prompts from IPC clients until idle timeout.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_prompt(
     agent_name: &str,
@@ -174,6 +179,9 @@ pub async fn run_prompt(
     timeout_secs: Option<u64>,
 ) -> Result<i32> {
     let mut renderer = make_renderer(output_format);
+
+    // Default TTL for the queue owner (5 minutes).
+    let queue_ttl_secs: u64 = 300;
 
     // Find or create session record.
     // If an existing open session is found, reuse its key so conversation
@@ -210,6 +218,22 @@ pub async fn run_prompt(
         renderer.session_info(&format!("resuming session {}", &key[..12.min(key.len())]));
     }
 
+    // Check if a queue owner already exists for this session.
+    // Use the lease file (with heartbeat + PID liveness check) for reliable
+    // ownership detection. If a valid lease exists, the client path (#15) will
+    // handle connecting — for now, print a placeholder message.
+    if let Some(lease) = LeaseFile::read(&key)
+        && lease.is_valid(queue_ttl_secs)
+    {
+        eprintln!(
+            "Queue owner already running (pid {}), use queue client to connect.",
+            lease.pid
+        );
+        return Ok(0);
+    }
+
+    // --- Become the queue owner ---
+
     // Write PID file so `cancel` and `status` commands can find us.
     // The guard removes it automatically when this function returns.
     let _pid_guard = PidGuard::new(&key).map_err(|e| {
@@ -217,14 +241,27 @@ pub async fn run_prompt(
         AcpCliError::Io(e)
     })?;
 
+    // Write lease file to claim queue ownership.
+    LeaseFile::write(&key).map_err(|e| {
+        renderer.error(&format!("failed to write lease file: {e}"));
+        AcpCliError::Io(e)
+    })?;
+
+    // Start IPC server so future clients can connect.
+    let listener = start_ipc_server(&key).await.map_err(|e| {
+        LeaseFile::remove(&key);
+        renderer.error(&format!("failed to start IPC server: {e}"));
+        AcpCliError::Io(e)
+    })?;
+
     // Start bridge
     let mut bridge = AcpBridge::start(command, args, cwd).await?;
     let cancel = bridge.cancel_handle();
 
-    // Send prompt (get oneshot receiver without blocking)
+    // Send the first prompt (get oneshot receiver without blocking)
     let prompt_reply = bridge.send_prompt(vec![prompt_text.clone()]).await?;
 
-    // Run event loop (borrows evt_rx mutably; cancel handle is separate)
+    // Run event loop for the first prompt
     let loop_result = event_loop(
         &mut bridge.evt_rx,
         prompt_reply,
@@ -235,10 +272,7 @@ pub async fn run_prompt(
     )
     .await;
 
-    let _ = bridge.shutdown().await;
-
     // Update the session record with the new ACP session ID (best-effort).
-    // Each run spawns a fresh agent, so the ACP session ID changes every time.
     if let Ok(ref res) = loop_result
         && let Some(ref new_acp_id) = res.acp_session_id
         && let Ok(Some(mut record)) = SessionRecord::load(&sess_file)
@@ -270,7 +304,22 @@ pub async fn run_prompt(
         }
     }
 
-    loop_result.map(|r| r.exit_code)
+    // If the first prompt failed, clean up and return early.
+    if loop_result.is_err() {
+        LeaseFile::remove(&key);
+        crate::queue::ipc::cleanup_socket(&key);
+        let _ = bridge.shutdown().await;
+        return loop_result.map(|r| r.exit_code);
+    }
+
+    let first_exit_code = loop_result.map(|r| r.exit_code)?;
+
+    // First prompt succeeded — enter queue owner mode to serve subsequent
+    // prompts from IPC clients until idle timeout.
+    let owner = QueueOwner::new(bridge, listener, &key, queue_ttl_secs).await?;
+    let _ = owner.run().await;
+
+    Ok(first_exit_code)
 }
 
 /// Run a non-interactive exec command (no session persistence).
