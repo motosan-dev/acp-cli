@@ -179,12 +179,12 @@ async fn acp_thread_main(
         .stderr(std::process::Stdio::inherit())
         .kill_on_drop(true);
 
-    // Pass API key to the agent subprocess so it doesn't rely on
-    // ~/.claude.json session auth (which expires).
-    // Claude Agent SDK reads ANTHROPIC_API_KEY directly.
-    if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-        cmd.env("ANTHROPIC_API_KEY", &key);
-    }
+    // Do NOT pass ANTHROPIC_API_KEY to the agent subprocess.
+    // claude-agent-acp uses Claude Code's subscription auth (~/.claude.json),
+    // not API keys. If ANTHROPIC_API_KEY contains an OAuth setup token
+    // (sk-ant-oat01-*), the Claude Agent SDK would try to use it as an API
+    // key and fail with "Invalid API key".
+    cmd.env_remove("ANTHROPIC_API_KEY");
 
     let mut child = cmd
         .spawn()
