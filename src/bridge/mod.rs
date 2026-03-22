@@ -179,12 +179,15 @@ async fn acp_thread_main(
         .stderr(std::process::Stdio::inherit())
         .kill_on_drop(true);
 
-    // Do NOT pass ANTHROPIC_API_KEY to the agent subprocess.
-    // claude-agent-acp uses Claude Code's subscription auth (~/.claude.json),
-    // not API keys. If ANTHROPIC_API_KEY contains an OAuth setup token
-    // (sk-ant-oat01-*), the Claude Agent SDK would try to use it as an API
-    // key and fail with "Invalid API key".
+    // Remove ANTHROPIC_API_KEY to prevent OAuth setup tokens (sk-ant-oat01-*)
+    // from being misidentified as API keys by the Claude Agent SDK.
     cmd.env_remove("ANTHROPIC_API_KEY");
+
+    // Actively inject the OAuth token so claude-agent-acp doesn't have to
+    // resolve it from ~/.claude.json or Keychain (which can be stale).
+    if let Some(token) = resolve_claude_auth_token() {
+        cmd.env("ANTHROPIC_AUTH_TOKEN", &token);
+    }
 
     let mut child = cmd
         .spawn()
@@ -307,4 +310,70 @@ async fn acp_thread_main(
     // Cleanup
     child.kill().await.ok();
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Claude auth token resolution
+// ---------------------------------------------------------------------------
+
+/// Resolve an OAuth token for claude-agent-acp, checking (in order):
+/// 1. `ANTHROPIC_AUTH_TOKEN` env var (already set externally)
+/// 2. `~/.claude.json` → `oauthAccount.accessToken`
+/// 3. macOS Keychain (`security find-generic-password`)
+fn resolve_claude_auth_token() -> Option<String> {
+    // 1. Already set externally
+    if let Ok(t) = std::env::var("ANTHROPIC_AUTH_TOKEN") {
+        if !t.is_empty() {
+            return Some(t);
+        }
+    }
+
+    // 2. ~/.claude.json
+    if let Some(token) = read_claude_json_token() {
+        return Some(token);
+    }
+
+    // 3. macOS Keychain
+    #[cfg(target_os = "macos")]
+    if let Some(token) = read_keychain_token() {
+        return Some(token);
+    }
+
+    None
+}
+
+/// Read the OAuth access token from `~/.claude.json`.
+fn read_claude_json_token() -> Option<String> {
+    let path = dirs::home_dir()?.join(".claude.json");
+    let content = std::fs::read_to_string(path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    json.pointer("/oauthAccount/accessToken")
+        .or_else(|| json.get("accessToken"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+/// Read the Claude Code OAuth token from the macOS Keychain.
+#[cfg(target_os = "macos")]
+fn read_keychain_token() -> Option<String> {
+    // Try known service names used by Claude Code
+    for service in &["Claude Code", "claude.ai", "anthropic.claude"] {
+        let output = std::process::Command::new("security")
+            .args(["find-generic-password", "-s", service, "-w"])
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let token = String::from_utf8(output.stdout)
+                .ok()?
+                .trim()
+                .to_string();
+            if !token.is_empty() {
+                return Some(token);
+            }
+        }
+    }
+    None
 }
