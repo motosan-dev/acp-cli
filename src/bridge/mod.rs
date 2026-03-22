@@ -172,12 +172,21 @@ async fn acp_thread_main(
 ) -> Result<()> {
     // 1. Spawn agent process
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    let mut child = tokio::process::Command::new(&command)
-        .args(&args_refs)
+    let mut cmd = tokio::process::Command::new(&command);
+    cmd.args(&args_refs)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+
+    // Pass API key to the agent subprocess so it doesn't rely on
+    // ~/.claude.json session auth (which expires).
+    // claude-agent-acp reads ANTHROPIC_AUTH_TOKEN for gateway auth.
+    if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+        cmd.env("ANTHROPIC_AUTH_TOKEN", &key);
+    }
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| AcpCliError::Agent(format!("{command}: {e}")))?;
 
