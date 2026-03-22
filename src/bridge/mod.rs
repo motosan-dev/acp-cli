@@ -181,9 +181,9 @@ async fn acp_thread_main(
 
     // Pass API key to the agent subprocess so it doesn't rely on
     // ~/.claude.json session auth (which expires).
-    // claude-agent-acp reads ANTHROPIC_AUTH_TOKEN for gateway auth.
+    // Claude Agent SDK reads ANTHROPIC_API_KEY directly.
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-        cmd.env("ANTHROPIC_AUTH_TOKEN", &key);
+        cmd.env("ANTHROPIC_API_KEY", &key);
     }
 
     let mut child = cmd
