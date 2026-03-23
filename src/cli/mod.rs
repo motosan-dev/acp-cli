@@ -1,3 +1,4 @@
+pub mod init;
 pub mod prompt;
 pub mod prompt_source;
 pub mod session;
@@ -78,6 +79,8 @@ pub enum Commands {
         #[command(subcommand)]
         action: SessionAction,
     },
+    /// Interactive setup — detect auth token, write config
+    Init,
     /// Manage configuration
     Config {
         #[command(subcommand)]

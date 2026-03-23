@@ -46,6 +46,10 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
         .to_string();
 
     match cli.command {
+        Some(Commands::Init) => {
+            acp_cli::cli::init::run_init()?;
+            return Ok(0);
+        }
         Some(Commands::Config { action }) => match action {
             ConfigAction::Show => {
                 let config_json = serde_json::to_string_pretty(&config).unwrap_or_else(|_| {
