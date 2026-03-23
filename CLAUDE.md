@@ -77,6 +77,8 @@ Main thread (Send)          ACP thread (!Send, LocalSet)
 3. `~/.claude.json` → `oauthAccount.accessToken`
 4. macOS Keychain
 
+**Note:** OAuth tokens (`sk-ant-oat01-*`) are skipped during env var injection — the SDK resolves them from Keychain internally.
+
 **Config merge order:** global (`~/.acp-cli/config.json`) → project (`.acp-cli.json`) → CLI flags.
 
 ## Rules

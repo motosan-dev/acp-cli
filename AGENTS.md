@@ -8,7 +8,7 @@ Read this before writing any code.
 
 **acp-cli** is a headless CLI client for the Agent Client Protocol (ACP). It spawns coding agents (Claude, Codex, Gemini, etc.) as child processes and communicates over structured JSON-RPC via stdio pipes.
 
-- Version: 0.1.0
+- Version: 0.2.1
 - Language: Rust (edition 2024)
 - Published to: crates.io (`acp-cli`)
 - GitHub: https://github.com/motosan-dev/acp-cli

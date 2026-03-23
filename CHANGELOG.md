@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.1] - 2026-03-23
+
+### Fixed
+- **OAuth token injection causes 401** (#22): OAuth tokens (`sk-ant-oat01-*`) are no longer injected via `ANTHROPIC_AUTH_TOKEN` env var. The Claude Agent SDK's env-var auth path omits the required `anthropic-beta: oauth-2025-04-20` header, causing authentication failure. OAuth tokens are now left for the SDK to resolve from macOS Keychain internally. Non-OAuth tokens (API keys) are still injected normally.
+
 ## [0.2.0] - 2026-03-23
 
 ### Added

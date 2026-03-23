@@ -2,7 +2,7 @@
 
 > Headless CLI client for the Agent Client Protocol (ACP). Rust port of ACPX. Talk to coding agents (Claude, Codex, Gemini, etc.) over structured JSON-RPC instead of terminal scraping.
 
-- Version 0.2.0
+- Version 0.2.1
 - GitHub: https://github.com/motosan-dev/acp-cli
 - crates.io: https://crates.io/crates/acp-cli
 
@@ -154,6 +154,8 @@ Token for Claude agent resolved in order:
 2. `~/.acp-cli/config.json` → `auth_token`
 3. `~/.claude.json` → `oauthAccount.accessToken`
 4. macOS Keychain (`Claude Code` service)
+
+OAuth tokens (`sk-ant-oat01-*`) are detected but NOT injected via env var — the SDK resolves them from Keychain using the correct auth flow with `anthropic-beta: oauth-2025-04-20` header.
 
 ## Architecture
 

@@ -114,6 +114,8 @@ Token for Claude is resolved in order:
 3. `~/.claude.json` → `oauthAccount.accessToken`
 4. macOS Keychain (`Claude Code` service)
 
+**Note:** OAuth tokens (`sk-ant-oat01-*`) are detected but not injected via env var — the Claude Agent SDK resolves them from Keychain internally using the correct auth flow.
+
 ## Supported Agents
 
 | Agent | Command | Type |
