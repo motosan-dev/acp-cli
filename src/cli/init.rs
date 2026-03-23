@@ -33,55 +33,53 @@ pub fn run_init() -> crate::error::Result<()> {
     let mut token_source = "";
 
     // env var
-    if let Ok(t) = std::env::var("ANTHROPIC_AUTH_TOKEN") {
-        if !t.is_empty() {
-            println!(
-                "   ANTHROPIC_AUTH_TOKEN env: ✅ found ({}...)",
-                mask_token(&t)
-            );
-            detected_token = Some(t);
-            token_source = "env var";
-        }
+    if let Some(t) = std::env::var("ANTHROPIC_AUTH_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())
+    {
+        println!(
+            "   ANTHROPIC_AUTH_TOKEN env: ✅ found ({}...)",
+            mask_token(&t)
+        );
+        detected_token = Some(t);
+        token_source = "env var";
     }
 
     // existing config
-    if detected_token.is_none() {
-        let existing = AcpCliConfig::load();
-        if let Some(ref t) = existing.auth_token {
-            if !t.is_empty() {
-                println!(
-                    "   ~/.acp-cli/config.json:   ✅ found ({}...)",
-                    mask_token(t)
-                );
-                detected_token = Some(t.clone());
-                token_source = "config";
-            }
-        }
+    if detected_token.is_none()
+        && let Some(t) = AcpCliConfig::load().auth_token.filter(|t| !t.is_empty())
+    {
+        println!(
+            "   ~/.acp-cli/config.json:   ✅ found ({}...)",
+            mask_token(&t)
+        );
+        detected_token = Some(t);
+        token_source = "config";
     }
 
     // ~/.claude.json
-    if detected_token.is_none() {
-        if let Some(t) = read_claude_json_token() {
-            println!(
-                "   ~/.claude.json:           ✅ found ({}...)",
-                mask_token(&t)
-            );
-            detected_token = Some(t);
-            token_source = "~/.claude.json";
-        }
+    if detected_token.is_none()
+        && let Some(t) = read_claude_json_token()
+    {
+        println!(
+            "   ~/.claude.json:           ✅ found ({}...)",
+            mask_token(&t)
+        );
+        detected_token = Some(t);
+        token_source = "~/.claude.json";
     }
 
     // macOS Keychain
     #[cfg(target_os = "macos")]
-    if detected_token.is_none() {
-        if let Some(t) = read_keychain_token() {
-            println!(
-                "   macOS Keychain:           ✅ found ({}...)",
-                mask_token(&t)
-            );
-            detected_token = Some(t);
-            token_source = "Keychain";
-        }
+    if detected_token.is_none()
+        && let Some(t) = read_keychain_token()
+    {
+        println!(
+            "   macOS Keychain:           ✅ found ({}...)",
+            mask_token(&t)
+        );
+        detected_token = Some(t);
+        token_source = "Keychain";
     }
 
     if detected_token.is_none() {

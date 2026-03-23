@@ -48,7 +48,7 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
     match cli.command {
         Some(Commands::Init) => {
             acp_cli::cli::init::run_init()?;
-            return Ok(0);
+            Ok(0)
         }
         Some(Commands::Config { action }) => match action {
             ConfigAction::Show => {

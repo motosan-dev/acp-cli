@@ -323,18 +323,17 @@ async fn acp_thread_main(
 /// 4. macOS Keychain (`security find-generic-password`)
 fn resolve_claude_auth_token() -> Option<String> {
     // 1. Already set externally
-    if let Ok(t) = std::env::var("ANTHROPIC_AUTH_TOKEN") {
-        if !t.is_empty() {
-            return Some(t);
-        }
+    if let Some(t) = std::env::var("ANTHROPIC_AUTH_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())
+    {
+        return Some(t);
     }
 
     // 2. acp-cli config
     let config = crate::config::AcpCliConfig::load();
-    if let Some(ref token) = config.auth_token {
-        if !token.is_empty() {
-            return Some(token.clone());
-        }
+    if let Some(token) = config.auth_token.filter(|t| !t.is_empty()) {
+        return Some(token);
     }
 
     // 3. ~/.claude.json
@@ -375,10 +374,7 @@ fn read_keychain_token() -> Option<String> {
             .output()
             .ok()?;
         if output.status.success() {
-            let token = String::from_utf8(output.stdout)
-                .ok()?
-                .trim()
-                .to_string();
+            let token = String::from_utf8(output.stdout).ok()?.trim().to_string();
             if !token.is_empty() {
                 return Some(token);
             }
