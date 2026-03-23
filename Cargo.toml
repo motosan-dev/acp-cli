@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 description = "Headless CLI client for the Agent Client Protocol (ACP)"
 license = "MIT"
+repository = "https://github.com/motosan-dev/acp-cli"
+homepage = "https://github.com/motosan-dev/acp-cli"
+keywords = ["acp", "agent", "cli", "claude", "llm"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "acp-cli"
