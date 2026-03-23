@@ -183,10 +183,15 @@ async fn acp_thread_main(
     // from being misidentified as API keys by the Claude Agent SDK.
     cmd.env_remove("ANTHROPIC_API_KEY");
 
-    // Actively inject the OAuth token so claude-agent-acp doesn't have to
-    // resolve it from ~/.claude.json or Keychain (which can be stale).
+    // Inject auth token for non-OAuth tokens only.
+    // OAuth tokens (sk-ant-oat01-*) must NOT be injected via env var —
+    // the Claude Agent SDK's auth flow doesn't support the oauth-2025-04-20
+    // beta header, causing 401. Let the SDK resolve OAuth tokens itself
+    // from Keychain / ~/.claude.json.
     if let Some(token) = resolve_claude_auth_token() {
-        cmd.env("ANTHROPIC_AUTH_TOKEN", &token);
+        if !token.starts_with("sk-ant-oat01-") {
+            cmd.env("ANTHROPIC_AUTH_TOKEN", &token);
+        }
     }
 
     let mut child = cmd
