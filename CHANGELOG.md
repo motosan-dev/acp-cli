@@ -4,12 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.2.0] - 2026-03-23
 
 ### Added
 - `acp-cli init` interactive setup command — detects Claude Code, finds auth tokens, writes config
 - `auth_token` field in config — persist Anthropic auth token in `~/.acp-cli/config.json`
 - Auth token resolution chain: env var → config → `~/.claude.json` → macOS Keychain
+- CLAUDE.md, AGENTS.md project documentation
+- CLI integration tests (70 total tests)
 
 ## [0.1.0] - 2026-03-21
 
