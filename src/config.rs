@@ -12,6 +12,9 @@ pub struct AcpCliConfig {
     pub timeout: Option<u64>,
     pub format: Option<String>,
     pub agents: Option<HashMap<String, AgentOverride>>,
+    /// Anthropic auth token for Claude agent authentication.
+    /// Set via `acp-cli init` or manually in `~/.acp-cli/config.json`.
+    pub auth_token: Option<String>,
 }
 
 impl AcpCliConfig {
@@ -53,6 +56,7 @@ impl AcpCliConfig {
                 }
                 (base, proj) => proj.or(base),
             },
+            auth_token: project.auth_token.or(self.auth_token),
         }
     }
 }

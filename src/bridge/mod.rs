@@ -318,8 +318,9 @@ async fn acp_thread_main(
 
 /// Resolve an OAuth token for claude-agent-acp, checking (in order):
 /// 1. `ANTHROPIC_AUTH_TOKEN` env var (already set externally)
-/// 2. `~/.claude.json` → `oauthAccount.accessToken`
-/// 3. macOS Keychain (`security find-generic-password`)
+/// 2. `~/.acp-cli/config.json` → `auth_token` (set via `acp-cli init`)
+/// 3. `~/.claude.json` → `oauthAccount.accessToken`
+/// 4. macOS Keychain (`security find-generic-password`)
 fn resolve_claude_auth_token() -> Option<String> {
     // 1. Already set externally
     if let Ok(t) = std::env::var("ANTHROPIC_AUTH_TOKEN") {
@@ -328,12 +329,20 @@ fn resolve_claude_auth_token() -> Option<String> {
         }
     }
 
-    // 2. ~/.claude.json
+    // 2. acp-cli config
+    let config = crate::config::AcpCliConfig::load();
+    if let Some(ref token) = config.auth_token {
+        if !token.is_empty() {
+            return Some(token.clone());
+        }
+    }
+
+    // 3. ~/.claude.json
     if let Some(token) = read_claude_json_token() {
         return Some(token);
     }
 
-    // 3. macOS Keychain
+    // 4. macOS Keychain
     #[cfg(target_os = "macos")]
     if let Some(token) = read_keychain_token() {
         return Some(token);
