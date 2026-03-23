@@ -186,3 +186,60 @@ fn load_project_no_git_root_returns_default() {
     let cfg = AcpCliConfig::load_project(dir.path());
     assert!(cfg.default_agent.is_none());
 }
+
+// --- auth_token tests ---
+
+#[test]
+fn default_config_has_no_auth_token() {
+    let cfg = AcpCliConfig::default();
+    assert!(cfg.auth_token.is_none());
+}
+
+#[test]
+fn deserialize_auth_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, r#"{"auth_token": "sk-ant-test-123"}"#).unwrap();
+
+    let cfg = AcpCliConfig::load_from(&path);
+    assert_eq!(cfg.auth_token.as_deref(), Some("sk-ant-test-123"));
+}
+
+#[test]
+fn merge_auth_token_project_wins() {
+    let global = AcpCliConfig {
+        auth_token: Some("global-token".into()),
+        ..Default::default()
+    };
+    let project = AcpCliConfig {
+        auth_token: Some("project-token".into()),
+        ..Default::default()
+    };
+
+    let merged = global.merge(project);
+    assert_eq!(merged.auth_token.as_deref(), Some("project-token"));
+}
+
+#[test]
+fn merge_auth_token_global_preserved_when_project_none() {
+    let global = AcpCliConfig {
+        auth_token: Some("global-token".into()),
+        ..Default::default()
+    };
+    let project = AcpCliConfig::default();
+
+    let merged = global.merge(project);
+    assert_eq!(merged.auth_token.as_deref(), Some("global-token"));
+}
+
+#[test]
+fn serialize_config_with_auth_token() {
+    let cfg = AcpCliConfig {
+        default_agent: Some("claude".into()),
+        auth_token: Some("sk-test".into()),
+        ..Default::default()
+    };
+    let json = serde_json::to_string(&cfg).unwrap();
+    assert!(json.contains("sk-test"));
+    assert!(json.contains("auth_token"));
+}
