@@ -12,6 +12,14 @@
 cargo install acp-cli
 ```
 
+## Setup
+
+```bash
+acp-cli init
+```
+
+Detects Claude Code, finds existing auth tokens (env var → config → ~/.claude.json → Keychain), writes `~/.acp-cli/config.json`.
+
 ## Quick Start
 
 ```bash
@@ -58,6 +66,7 @@ Unknown agent names are treated as raw commands.
 ## Commands
 
 ```bash
+acp-cli init                                    # interactive setup
 acp-cli [agent] [prompt...]                     # persistent session prompt
 acp-cli [agent] exec [prompt...]                # one-shot (no persistence)
 acp-cli [agent] sessions new [--name <name>]    # create named session
@@ -127,6 +136,7 @@ Subsequent processes connect as **queue clients** via the socket.
   "default_agent": "claude",
   "default_permissions": "approve_reads",
   "timeout": 60,
+  "auth_token": "sk-ant-...",
   "agents": {
     "my-agent": { "command": "./custom", "args": ["--flag"] }
   }
@@ -136,6 +146,14 @@ Subsequent processes connect as **queue clients** via the socket.
 ### Project: `.acp-cli.json` (in git root)
 
 Same format. Merge order: global → project → CLI flags.
+
+### Auth Token Resolution
+
+Token for Claude agent resolved in order:
+1. `ANTHROPIC_AUTH_TOKEN` env var
+2. `~/.acp-cli/config.json` → `auth_token`
+3. `~/.claude.json` → `oauthAccount.accessToken`
+4. macOS Keychain (`Claude Code` service)
 
 ## Architecture
 

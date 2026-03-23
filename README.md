@@ -10,6 +10,14 @@ Talk to coding agents (Claude, Codex, Gemini, etc.) over a structured protocol i
 cargo install acp-cli
 ```
 
+## Setup
+
+```bash
+acp-cli init
+```
+
+Detects Claude Code installation, finds existing auth tokens, and writes `~/.acp-cli/config.json`.
+
 ## Usage
 
 ```bash
@@ -73,13 +81,14 @@ Unknown agent names are treated as raw commands.
 
 ## Config
 
-Create `~/.acp-cli/config.json`:
+Run `acp-cli init` or create `~/.acp-cli/config.json` manually:
 
 ```json
 {
   "default_agent": "claude",
   "default_permissions": "approve_reads",
   "timeout": 60,
+  "auth_token": "sk-ant-...",
   "agents": {
     "my-agent": {
       "command": "./custom-agent",
@@ -88,6 +97,15 @@ Create `~/.acp-cli/config.json`:
   }
 }
 ```
+
+### Auth Token Resolution
+
+The auth token for Claude is resolved in order:
+
+1. `ANTHROPIC_AUTH_TOKEN` environment variable
+2. `~/.acp-cli/config.json` → `auth_token`
+3. `~/.claude.json` → `oauthAccount.accessToken`
+4. macOS Keychain (`Claude Code` service)
 
 ## Session Management
 
