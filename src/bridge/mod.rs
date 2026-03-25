@@ -401,15 +401,36 @@ fn read_keychain_token() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::reap_child_process;
+    use super::{AcpCliError, BridgeCommand, BridgeEvent, acp_thread_main, reap_child_process};
+    use tokio::sync::mpsc;
+
+    fn exited_child_command() -> tokio::process::Command {
+        if cfg!(windows) {
+            let mut c = tokio::process::Command::new("cmd");
+            c.arg("/C").arg("exit 0");
+            c
+        } else {
+            let mut c = tokio::process::Command::new("sh");
+            c.arg("-c").arg("exit 0");
+            c
+        }
+    }
+
+    fn running_child_command() -> tokio::process::Command {
+        if cfg!(windows) {
+            let mut c = tokio::process::Command::new("cmd");
+            c.arg("/C").arg("ping -n 30 127.0.0.1 >NUL");
+            c
+        } else {
+            let mut c = tokio::process::Command::new("sh");
+            c.arg("-c").arg("sleep 10");
+            c
+        }
+    }
 
     #[tokio::test]
     async fn reap_child_process_handles_already_exited_child() {
-        let mut child = tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg("exit 0")
-            .spawn()
-            .expect("spawn child");
+        let mut child = exited_child_command().spawn().expect("spawn child");
 
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         reap_child_process(&mut child).await;
@@ -420,14 +441,68 @@ mod tests {
 
     #[tokio::test]
     async fn reap_child_process_kills_running_child() {
-        let mut child = tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg("sleep 10")
-            .spawn()
-            .expect("spawn child");
+        let mut child = running_child_command().spawn().expect("spawn child");
 
         reap_child_process(&mut child).await;
         let status = child.wait().await.expect("wait after kill");
         assert!(!status.success());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn initialize_error_still_reaps_child_process() {
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::tempdir;
+
+        let temp = tempdir().expect("create tempdir");
+        let pid_file = temp.path().join("agent.pid");
+        let script = temp.path().join("fake-acp-agent.sh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\necho $$ > \"{}\"\nexec 1>&-\nsleep 30\n",
+                pid_file.display()
+            ),
+        )
+        .expect("write script");
+        let mut perms = std::fs::metadata(&script)
+            .expect("script metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).expect("chmod script");
+
+        let (_cmd_tx, cmd_rx) = mpsc::channel::<BridgeCommand>(2);
+        let (evt_tx, _evt_rx) = mpsc::unbounded_channel::<BridgeEvent>();
+
+        let local = tokio::task::LocalSet::new();
+        let result = local
+            .run_until(tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                acp_thread_main(
+                    cmd_rx,
+                    evt_tx,
+                    script.to_string_lossy().to_string(),
+                    vec![],
+                    temp.path().to_path_buf(),
+                ),
+            ))
+            .await
+            .expect("acp_thread_main should not hang")
+            .expect_err("initialize should fail for non-ACP output");
+
+        assert!(
+            matches!(result, AcpCliError::Connection(_)),
+            "expected connection error, got: {result:?}"
+        );
+
+        let pid_raw = std::fs::read_to_string(&pid_file).expect("pid file");
+        let pid = pid_raw.trim().parse::<i32>().expect("parse pid");
+
+        // Verify child is gone; if still alive, kill it to avoid test leak.
+        let alive = unsafe { libc::kill(pid, 0) == 0 };
+        if alive {
+            let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
+        }
+        assert!(!alive, "child process {pid} should have been reaped");
     }
 }
