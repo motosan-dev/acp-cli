@@ -188,10 +188,10 @@ async fn acp_thread_main(
     // the Claude Agent SDK's auth flow doesn't support the oauth-2025-04-20
     // beta header, causing 401. Let the SDK resolve OAuth tokens itself
     // from Keychain / ~/.claude.json.
-    if let Some(token) = resolve_claude_auth_token() {
-        if !token.starts_with("sk-ant-oat01-") {
-            cmd.env("ANTHROPIC_AUTH_TOKEN", &token);
-        }
+    if let Some(token) = resolve_claude_auth_token()
+        && !token.starts_with("sk-ant-oat01-")
+    {
+        cmd.env("ANTHROPIC_AUTH_TOKEN", &token);
     }
 
     let mut child = cmd
@@ -223,98 +223,109 @@ async fn acp_thread_main(
         }
     });
 
-    // 2. Initialize
-    conn.initialize(
-        acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(
-            acp::Implementation::new("acp-cli", env!("CARGO_PKG_VERSION")),
-        ),
-    )
-    .await
-    .map_err(|e| AcpCliError::Connection(format!("initialize: {e}")))?;
-
-    // 3. Create session
-    let session = conn
-        .new_session(acp::NewSessionRequest::new(cwd))
+    let result = async {
+        // 2. Initialize
+        conn.initialize(
+            acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(
+                acp::Implementation::new("acp-cli", env!("CARGO_PKG_VERSION")),
+            ),
+        )
         .await
-        .map_err(|e| AcpCliError::Connection(format!("new_session: {e}")))?;
+        .map_err(|e| AcpCliError::Connection(format!("initialize: {e}")))?;
 
-    let session_id = session.session_id;
-    let _ = evt_tx.send(BridgeEvent::SessionCreated {
-        session_id: session_id.0.to_string(),
-    });
+        // 3. Create session
+        let session = conn
+            .new_session(acp::NewSessionRequest::new(cwd))
+            .await
+            .map_err(|e| AcpCliError::Connection(format!("new_session: {e}")))?;
 
-    // 4. Command loop
-    while let Some(cmd) = cmd_rx.recv().await {
-        match cmd {
-            BridgeCommand::Prompt { messages, reply } => {
-                let content_blocks: Vec<acp::ContentBlock> =
-                    messages.into_iter().map(|m| m.into()).collect();
-                let result = conn
-                    .prompt(acp::PromptRequest::new(session_id.clone(), content_blocks))
-                    .await;
-                match result {
-                    Ok(response) => {
-                        let stop_reason = serde_json::to_value(response.stop_reason)
-                            .ok()
-                            .and_then(|v| v.as_str().map(String::from))
-                            .unwrap_or_else(|| "unknown".to_string());
-                        let _ = evt_tx.send(BridgeEvent::PromptDone {
-                            stop_reason: stop_reason.clone(),
-                        });
-                        // Content was already streamed via session_notification -> TextChunk.
-                        // The main thread collects content from BridgeEvent::TextChunk events.
-                        let _ = reply.send(Ok(PromptResult {
-                            content: String::new(),
-                            stop_reason,
-                        }));
-                    }
-                    Err(e) => {
-                        let _ = reply.send(Err(AcpCliError::Agent(format!("{e}"))));
-                    }
-                }
-            }
-            BridgeCommand::Cancel => {
-                // ACP cancel not yet implemented in SDK
-            }
-            BridgeCommand::SetMode { mode, reply } => {
-                let mode_id = acp::SessionModeId::new(mode);
-                let request = acp::SetSessionModeRequest::new(session_id.clone(), mode_id);
-                match conn.set_session_mode(request).await {
-                    Ok(_) => {
-                        let _ = reply.send(Ok(()));
-                    }
-                    Err(e) => {
-                        let _ =
-                            reply.send(Err(AcpCliError::Agent(format!("set_session_mode: {e}"))));
+        let session_id = session.session_id;
+        let _ = evt_tx.send(BridgeEvent::SessionCreated {
+            session_id: session_id.0.to_string(),
+        });
+
+        // 4. Command loop
+        while let Some(cmd) = cmd_rx.recv().await {
+            match cmd {
+                BridgeCommand::Prompt { messages, reply } => {
+                    let content_blocks: Vec<acp::ContentBlock> =
+                        messages.into_iter().map(|m| m.into()).collect();
+                    let result = conn
+                        .prompt(acp::PromptRequest::new(session_id.clone(), content_blocks))
+                        .await;
+                    match result {
+                        Ok(response) => {
+                            let stop_reason = serde_json::to_value(response.stop_reason)
+                                .ok()
+                                .and_then(|v| v.as_str().map(String::from))
+                                .unwrap_or_else(|| "unknown".to_string());
+                            let _ = evt_tx.send(BridgeEvent::PromptDone {
+                                stop_reason: stop_reason.clone(),
+                            });
+                            // Content was already streamed via session_notification -> TextChunk.
+                            // The main thread collects content from BridgeEvent::TextChunk events.
+                            let _ = reply.send(Ok(PromptResult {
+                                content: String::new(),
+                                stop_reason,
+                            }));
+                        }
+                        Err(e) => {
+                            let _ = reply.send(Err(AcpCliError::Agent(format!("{e}"))));
+                        }
                     }
                 }
-            }
-            BridgeCommand::SetConfig { key, value, reply } => {
-                let config_id = acp::SessionConfigId::new(key);
-                let value_id = acp::SessionConfigValueId::new(value);
-                let request = acp::SetSessionConfigOptionRequest::new(
-                    session_id.clone(),
-                    config_id,
-                    value_id,
-                );
-                match conn.set_session_config_option(request).await {
-                    Ok(_) => {
-                        let _ = reply.send(Ok(()));
-                    }
-                    Err(e) => {
-                        let _ = reply.send(Err(AcpCliError::Agent(format!(
-                            "set_session_config_option: {e}"
-                        ))));
+                BridgeCommand::Cancel => {
+                    // ACP cancel not yet implemented in SDK
+                }
+                BridgeCommand::SetMode { mode, reply } => {
+                    let mode_id = acp::SessionModeId::new(mode);
+                    let request = acp::SetSessionModeRequest::new(session_id.clone(), mode_id);
+                    match conn.set_session_mode(request).await {
+                        Ok(_) => {
+                            let _ = reply.send(Ok(()));
+                        }
+                        Err(e) => {
+                            let _ = reply
+                                .send(Err(AcpCliError::Agent(format!("set_session_mode: {e}"))));
+                        }
                     }
                 }
+                BridgeCommand::SetConfig { key, value, reply } => {
+                    let config_id = acp::SessionConfigId::new(key);
+                    let value_id = acp::SessionConfigValueId::new(value);
+                    let request = acp::SetSessionConfigOptionRequest::new(
+                        session_id.clone(),
+                        config_id,
+                        value_id,
+                    );
+                    match conn.set_session_config_option(request).await {
+                        Ok(_) => {
+                            let _ = reply.send(Ok(()));
+                        }
+                        Err(e) => {
+                            let _ = reply.send(Err(AcpCliError::Agent(format!(
+                                "set_session_config_option: {e}"
+                            ))));
+                        }
+                    }
+                }
+                BridgeCommand::Shutdown => break,
             }
-            BridgeCommand::Shutdown => break,
         }
+        Ok(())
     }
+    .await;
 
-    // Cleanup
-    child.kill().await.ok();
-    Ok(())
+    // Cleanup: always reap child to avoid zombie accumulation.
+    reap_child_process(&mut child).await;
+    result
+}
+
+async fn reap_child_process(child: &mut tokio::process::Child) {
+    if !matches!(child.try_wait(), Ok(Some(_))) {
+        let _ = child.start_kill();
+    }
+    let _ = child.wait().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -386,4 +397,37 @@ fn read_keychain_token() -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reap_child_process;
+
+    #[tokio::test]
+    async fn reap_child_process_handles_already_exited_child() {
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg("exit 0")
+            .spawn()
+            .expect("spawn child");
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        reap_child_process(&mut child).await;
+
+        let status = child.wait().await.expect("wait after reap");
+        assert!(status.success());
+    }
+
+    #[tokio::test]
+    async fn reap_child_process_kills_running_child() {
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg("sleep 10")
+            .spawn()
+            .expect("spawn child");
+
+        reap_child_process(&mut child).await;
+        let status = child.wait().await.expect("wait after kill");
+        assert!(!status.success());
+    }
 }
