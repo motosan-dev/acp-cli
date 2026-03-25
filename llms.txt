@@ -2,7 +2,7 @@
 
 > Headless CLI client for the Agent Client Protocol (ACP). Rust port of ACPX. Talk to coding agents (Claude, Codex, Gemini, etc.) over structured JSON-RPC instead of terminal scraping.
 
-- Version 0.2.1
+- Version 0.2.2
 - GitHub: https://github.com/motosan-dev/acp-cli
 - crates.io: https://crates.io/crates/acp-cli
 
@@ -188,8 +188,8 @@ Main thread (Send)          ACP thread (!Send, LocalSet)
 # 1. Bump version in Cargo.toml
 # 2. Update CHANGELOG.md
 # 3. Commit
-git commit -m "chore: release v0.2.0"
+git commit -m "chore: release v0.2.2"
 # 4. Tag + push (triggers publish.yml → crates.io)
-git tag -a v0.2.0 -m "v0.2.0 — summary"
-git push origin main v0.2.0
+git tag -a v0.2.2 -m "v0.2.2 — summary"
+git push origin main v0.2.2
 ```

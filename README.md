@@ -4,6 +4,12 @@ Headless CLI client for the [Agent Client Protocol (ACP)](https://agentclientpro
 
 Rust port of [ACPX](https://github.com/openclaw/acpx).
 
+## Release Highlights (v0.2.2)
+
+- ACP bridge shutdown now always reaps child processes to avoid zombie accumulation.
+- Cleanup now also runs on early initialization/session setup failures.
+- Bridge cleanup tests expanded with initialization-failure coverage and cross-platform command usage.
+
 ## Install
 
 ```bash

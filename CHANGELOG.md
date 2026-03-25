@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.2] - 2026-03-25
+
+### Fixed
+- **ACP child process cleanup and reaping**: bridge shutdown now explicitly reaps child processes (`try_wait` + `start_kill` + `wait`) to prevent zombie process accumulation in long-running orchestrators.
+- **Early error-path cleanup**: child process reaping now runs even when ACP initialization/session setup fails before the command loop starts.
+
+### Tests
+- Added bridge test coverage for initialization-failure cleanup/reaping path.
+- Updated child cleanup tests to use cross-platform command invocation instead of Unix-only `sh`.
+
 ## [0.2.1] - 2026-03-23
 
 ### Fixed
