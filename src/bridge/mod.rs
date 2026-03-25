@@ -188,10 +188,10 @@ async fn acp_thread_main(
     // the Claude Agent SDK's auth flow doesn't support the oauth-2025-04-20
     // beta header, causing 401. Let the SDK resolve OAuth tokens itself
     // from Keychain / ~/.claude.json.
-    if let Some(token) = resolve_claude_auth_token() {
-        if !token.starts_with("sk-ant-oat01-") {
-            cmd.env("ANTHROPIC_AUTH_TOKEN", &token);
-        }
+    if let Some(token) = resolve_claude_auth_token()
+        && !token.starts_with("sk-ant-oat01-")
+    {
+        cmd.env("ANTHROPIC_AUTH_TOKEN", &token);
     }
 
     let mut child = cmd
@@ -312,9 +312,16 @@ async fn acp_thread_main(
         }
     }
 
-    // Cleanup
-    child.kill().await.ok();
+    // Cleanup: always reap child to avoid zombie accumulation.
+    reap_child_process(&mut child).await;
     Ok(())
+}
+
+async fn reap_child_process(child: &mut tokio::process::Child) {
+    if !matches!(child.try_wait(), Ok(Some(_))) {
+        let _ = child.start_kill();
+    }
+    let _ = child.wait().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -386,4 +393,37 @@ fn read_keychain_token() -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reap_child_process;
+
+    #[tokio::test]
+    async fn reap_child_process_handles_already_exited_child() {
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg("exit 0")
+            .spawn()
+            .expect("spawn child");
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        reap_child_process(&mut child).await;
+
+        let status = child.wait().await.expect("wait after reap");
+        assert!(status.success());
+    }
+
+    #[tokio::test]
+    async fn reap_child_process_kills_running_child() {
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg("sleep 10")
+            .spawn()
+            .expect("spawn child");
+
+        reap_child_process(&mut child).await;
+        let status = child.wait().await.expect("wait after kill");
+        assert!(!status.success());
+    }
 }
