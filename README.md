@@ -190,7 +190,7 @@ use std::path::PathBuf;
 
 let bridge = AcpBridge::start(
     "npx".to_string(),
-    vec!["-y".into(), "@zed-industries/claude-agent-acp".into()],
+    vec!["-y".into(), "@agentclientprotocol/claude-agent-acp@^0.24.2".into()],
     PathBuf::from("."),
 ).await?;
 
