@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **`--suppress-reads`**: hides file-read tool output in text and JSON output. Tool name and path still appear; the returned bytes are replaced with `[read suppressed — N bytes]` (text) or `"output": "[suppressed]"` (JSON). Non-read tool output is unaffected.
 - **`--prompt-retries <n>`**: automatically retry transient prompt failures (connection errors, agent spawn failures, bridge channel closure) with exponential backoff and jitter. Default is `0` (no retry). Retries are guarded against side-effects: only connection-level errors (before any agent output is produced) trigger a retry. Semantic errors (permission denied, session not found, auth failures) fail immediately without retrying.
 - **New agents**: `iflow` (`iflow --experimental-acp`), `qoder` (`qodercli --acp`), `trae` (`traecli acp serve`).
 

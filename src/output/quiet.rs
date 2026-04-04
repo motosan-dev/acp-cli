@@ -23,6 +23,7 @@ impl OutputRenderer for QuietRenderer {
     }
 
     fn tool_status(&mut self, _tool: &str) {}
+    fn tool_result(&mut self, _tool: &str, _output: &str) {}
 
     fn permission_denied(&mut self, _tool: &str) {}
 

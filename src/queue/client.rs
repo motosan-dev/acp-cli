@@ -71,6 +71,11 @@ impl QueueClient {
                 Some(QueueResponse::Event { kind, data }) => match kind.as_str() {
                     "text_chunk" => renderer.text_chunk(&data),
                     "tool_use" => renderer.tool_status(&data),
+                    "tool_result" => {
+                        if let Some((name, output)) = data.split_once('\x00') {
+                            renderer.tool_result(name, output);
+                        }
+                    }
                     _ => {
                         // Unknown event kind — log as info and continue.
                         renderer.session_info(&format!("event({kind}): {data}"));

@@ -38,6 +38,11 @@ pub enum BridgeEvent {
     ToolUse {
         name: String,
     },
+    /// Emitted when a tool call completes and returns output.
+    ToolResult {
+        name: String,
+        output: String,
+    },
     PermissionRequest {
         tool: ToolCallInfo,
         options: Vec<PermissionOption>,

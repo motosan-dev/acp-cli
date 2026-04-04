@@ -2,19 +2,21 @@ use std::io::{self, IsTerminal, Write};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use super::OutputRenderer;
+use super::{OutputRenderer, is_read_tool};
 
 pub struct TextRenderer {
     spinner: Option<ProgressBar>,
     is_tty: bool,
+    suppress_reads: bool,
 }
 
 impl TextRenderer {
-    pub fn new() -> Self {
+    pub fn new(suppress_reads: bool) -> Self {
         let is_tty = io::stdout().is_terminal();
         Self {
             spinner: None,
             is_tty,
+            suppress_reads,
         }
     }
 
@@ -42,12 +44,6 @@ impl TextRenderer {
     }
 }
 
-impl Default for TextRenderer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl OutputRenderer for TextRenderer {
     fn text_chunk(&mut self, text: &str) {
         self.clear_spinner();
@@ -57,6 +53,16 @@ impl OutputRenderer for TextRenderer {
 
     fn tool_status(&mut self, tool: &str) {
         self.show_spinner(&format!("Using tool: {tool}"));
+    }
+
+    fn tool_result(&mut self, tool: &str, output: &str) {
+        self.clear_spinner();
+        if self.suppress_reads && is_read_tool(tool) {
+            eprintln!("  [read suppressed — {} bytes]", output.len());
+        }
+        // Non-read tools: result body is not displayed in text mode to avoid
+        // cluttering the terminal. The agent's own response text (via TextChunk)
+        // describes what was found.
     }
 
     fn permission_denied(&mut self, tool: &str) {
