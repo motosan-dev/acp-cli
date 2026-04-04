@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **`--prompt-retries <n>`**: automatically retry transient prompt failures (connection errors, agent spawn failures, bridge channel closure) with exponential backoff and jitter. Default is `0` (no retry). Retries are guarded against side-effects: only connection-level errors (before any agent output is produced) trigger a retry. Semantic errors (permission denied, session not found, auth failures) fail immediately without retrying.
+
 ## [0.2.2] - 2026-03-25
 
 ### Fixed

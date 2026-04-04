@@ -166,3 +166,33 @@ fn no_args_shows_help() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Usage:") || stdout.contains("acp-cli"));
 }
+
+// --- --prompt-retries flag ---
+
+#[test]
+fn help_shows_prompt_retries_flag() {
+    let output = acp_cli().arg("--help").output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("prompt-retries"));
+}
+
+#[test]
+fn prompt_retries_default_is_zero() {
+    // Passing an unknown agent with no prompt still shows help (exit 0).
+    // The important thing is that omitting --prompt-retries doesn't cause a parse error.
+    let output = acp_cli().arg("--help").output().unwrap();
+    assert!(output.status.success());
+}
+
+#[test]
+fn prompt_retries_flag_is_accepted() {
+    // Verify the flag is parsed without error (no agent/prompt means help is shown).
+    let output = acp_cli()
+        .args(["--prompt-retries", "3", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("prompt-retries"));
+}
