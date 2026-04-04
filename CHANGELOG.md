@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 - **`--prompt-retries <n>`**: automatically retry transient prompt failures (connection errors, agent spawn failures, bridge channel closure) with exponential backoff and jitter. Default is `0` (no retry). Retries are guarded against side-effects: only connection-level errors (before any agent output is produced) trigger a retry. Semantic errors (permission denied, session not found, auth failures) fail immediately without retrying.
+- **New agents**: `iflow` (`iflow --experimental-acp`), `qoder` (`qodercli --acp`), `trae` (`traecli acp serve`).
+
+### Fixed
+- **`claude` package renamed**: updated from `@zed-industries/claude-agent-acp` (defunct) to `@agentclientprotocol/claude-agent-acp@^0.24.2`.
+- **`kiro` command**: updated from `kiro-cli acp` to `kiro-cli-chat acp`.
+- **Pinned npm versions**: `codex` → `@zed-industries/codex-acp@^0.10.0`, `pi` → `pi-acp@^0.0.22`.
 
 ## [0.2.2] - 2026-03-25
 
