@@ -116,8 +116,8 @@ async fn event_loop(
                         renderer.text_chunk(&text);
                     }
                     Some(BridgeEvent::ToolUse { name }) => renderer.tool_status(&name),
-                    Some(BridgeEvent::ToolResult { name, output }) => {
-                        renderer.tool_result(&name, &output);
+                    Some(BridgeEvent::ToolResult { name, output, is_read }) => {
+                        renderer.tool_result(&name, &output, is_read);
                     }
                     Some(BridgeEvent::PermissionRequest { tool, options, reply }) => {
                         let decision = resolve_permission(&tool, &options, permission_mode);

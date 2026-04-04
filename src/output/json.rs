@@ -2,7 +2,7 @@ use std::io::{self, Write};
 
 use serde_json::json;
 
-use super::{OutputRenderer, is_read_tool};
+use super::OutputRenderer;
 
 pub struct JsonRenderer {
     suppress_reads: bool,
@@ -29,8 +29,8 @@ impl OutputRenderer for JsonRenderer {
         self.emit(json!({"type": "tool", "name": tool}));
     }
 
-    fn tool_result(&mut self, tool: &str, output: &str) {
-        if self.suppress_reads && is_read_tool(tool) {
+    fn tool_result(&mut self, tool: &str, output: &str, is_read: bool) {
+        if self.suppress_reads && is_read {
             self.emit(json!({
                 "type": "tool_result",
                 "name": tool,

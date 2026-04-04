@@ -1,5 +1,8 @@
 pub mod permissions;
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use agent_client_protocol as acp;
 use tokio::sync::{mpsc, oneshot};
 
@@ -15,6 +18,18 @@ use crate::bridge::events::{
 /// tool calls) into corresponding BridgeEvent variants.
 pub struct BridgedAcpClient {
     pub evt_tx: mpsc::UnboundedSender<BridgeEvent>,
+    /// Maps tool_call_id → (title, is_read) for in-flight tool calls.
+    /// Populated on ToolCall (start), consumed on ToolCallUpdate with Completed/Failed.
+    tool_call_state: RefCell<HashMap<String, (String, bool)>>,
+}
+
+impl BridgedAcpClient {
+    pub fn new(evt_tx: mpsc::UnboundedSender<BridgeEvent>) -> Self {
+        Self {
+            evt_tx,
+            tool_call_state: RefCell::new(HashMap::new()),
+        }
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -23,13 +38,11 @@ impl acp::Client for BridgedAcpClient {
         &self,
         args: acp::RequestPermissionRequest,
     ) -> acp::Result<acp::RequestPermissionResponse> {
-        // Extract tool info from the ToolCallUpdate
         let tool = ToolCallInfo {
             name: args.tool_call.fields.title.clone().unwrap_or_default(),
             description: None,
         };
 
-        // Convert ACP PermissionOptions to our bridge PermissionOptions
         let options: Vec<PermissionOption> = args
             .options
             .iter()
@@ -44,20 +57,15 @@ impl acp::Client for BridgedAcpClient {
             })
             .collect();
 
-        // Create a oneshot channel for the permission reply
         let (reply_tx, reply_rx) = oneshot::channel();
-
-        // Send the permission request to the main event loop
         let _ = self.evt_tx.send(BridgeEvent::PermissionRequest {
             tool,
             options,
             reply: reply_tx,
         });
 
-        // Wait for the decision from the main thread
         let outcome = reply_rx.await.unwrap_or(PermissionOutcome::Cancelled);
 
-        // Convert our PermissionOutcome back to ACP's RequestPermissionOutcome
         let acp_outcome = match outcome {
             PermissionOutcome::Selected { option_id } => acp::RequestPermissionOutcome::Selected(
                 acp::SelectedPermissionOutcome::new(option_id),
@@ -78,20 +86,39 @@ impl acp::Client for BridgedAcpClient {
                 }
             }
             acp::SessionUpdate::ToolCall(tool_call) => {
-                if let Some(ref raw) = tool_call.raw_output {
-                    // Tool completed — emit result event with its output.
-                    let output = match raw {
-                        serde_json::Value::String(s) => s.clone(),
-                        v => v.to_string(),
-                    };
+                // A new tool call has been announced — emit ToolUse for the spinner
+                // and record (title, is_read) keyed by tool_call_id for later.
+                let is_read = matches!(tool_call.kind, acp::ToolKind::Read);
+                let id = tool_call.tool_call_id.0.to_string();
+                let title = tool_call.title.clone();
+                self.tool_call_state
+                    .borrow_mut()
+                    .insert(id, (title.clone(), is_read));
+                let _ = self.evt_tx.send(BridgeEvent::ToolUse { name: title });
+            }
+            acp::SessionUpdate::ToolCallUpdate(update) => {
+                // Only act when the tool has finished (Completed or Failed).
+                let done = matches!(
+                    update.fields.status,
+                    Some(acp::ToolCallStatus::Completed) | Some(acp::ToolCallStatus::Failed)
+                );
+                if done {
+                    let id = update.tool_call_id.0.to_string();
+                    let (title, is_read) = self
+                        .tool_call_state
+                        .borrow_mut()
+                        .remove(&id)
+                        .unwrap_or_default();
+                    let output = update
+                        .fields
+                        .content
+                        .as_deref()
+                        .map(extract_text_output)
+                        .unwrap_or_default();
                     let _ = self.evt_tx.send(BridgeEvent::ToolResult {
-                        name: tool_call.title.clone(),
+                        name: title,
                         output,
-                    });
-                } else {
-                    // Tool is starting — emit use event for spinner/status.
-                    let _ = self.evt_tx.send(BridgeEvent::ToolUse {
-                        name: tool_call.title.clone(),
+                        is_read,
                     });
                 }
             }
@@ -101,4 +128,20 @@ impl acp::Client for BridgedAcpClient {
         }
         Ok(())
     }
+}
+
+/// Extract plain-text output from a slice of `ToolCallContent` items.
+fn extract_text_output(content: &[acp::ToolCallContent]) -> String {
+    content
+        .iter()
+        .filter_map(|c| {
+            if let acp::ToolCallContent::Content(block) = c
+                && let acp::ContentBlock::Text(text) = &block.content
+            {
+                return Some(text.text.clone());
+            }
+            None
+        })
+        .collect::<Vec<_>>()
+        .join("")
 }

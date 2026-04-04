@@ -72,9 +72,16 @@ impl QueueClient {
                     "text_chunk" => renderer.text_chunk(&data),
                     "tool_use" => renderer.tool_status(&data),
                     "tool_result" => {
-                        if let Some((name, output)) = data.split_once('\x00') {
-                            renderer.tool_result(name, output);
+                        // Encoded as "name\x00{0|1}\x00output"
+                        let mut parts = data.splitn(3, '\x00');
+                        if let (Some(name), Some(is_read_str), Some(output)) =
+                            (parts.next(), parts.next(), parts.next())
+                        {
+                            renderer.tool_result(name, output, is_read_str == "1");
                         }
+                    }
+                    "prompt_done" => {
+                        // Informational — PromptResult handles termination.
                     }
                     _ => {
                         // Unknown event kind — log as info and continue.

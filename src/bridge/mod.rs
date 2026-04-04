@@ -207,9 +207,7 @@ async fn acp_thread_main(
         .take()
         .ok_or_else(|| AcpCliError::Connection("agent has no stdout".into()))?;
 
-    let client = BridgedAcpClient {
-        evt_tx: evt_tx.clone(),
-    };
+    let client = BridgedAcpClient::new(evt_tx.clone());
 
     let (conn, handle_io) =
         acp::ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |fut| {

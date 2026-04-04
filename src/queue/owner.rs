@@ -400,9 +400,14 @@ impl QueueOwner {
                 kind: "agent_exited".to_string(),
                 data: code.map(|c| c.to_string()).unwrap_or_default(),
             }),
-            BridgeEvent::ToolResult { name, output } => Some(QueueResponse::Event {
+            BridgeEvent::ToolResult {
+                name,
+                output,
+                is_read,
+            } => Some(QueueResponse::Event {
                 kind: "tool_result".to_string(),
-                data: format!("{name}\x00{output}"),
+                // Encoded as "name\x00{0|1}\x00output" where 1 = is_read.
+                data: format!("{name}\x00{}\x00{output}", u8::from(*is_read)),
             }),
             BridgeEvent::PermissionRequest { .. } => {
                 // Permission requests are handled by the owner process itself,

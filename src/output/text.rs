@@ -2,7 +2,7 @@ use std::io::{self, IsTerminal, Write};
 
 use indicatif::{ProgressBar, ProgressStyle};
 
-use super::{OutputRenderer, is_read_tool};
+use super::OutputRenderer;
 
 pub struct TextRenderer {
     spinner: Option<ProgressBar>,
@@ -55,9 +55,9 @@ impl OutputRenderer for TextRenderer {
         self.show_spinner(&format!("Using tool: {tool}"));
     }
 
-    fn tool_result(&mut self, tool: &str, output: &str) {
+    fn tool_result(&mut self, _tool: &str, output: &str, is_read: bool) {
         self.clear_spinner();
-        if self.suppress_reads && is_read_tool(tool) {
+        if self.suppress_reads && is_read {
             eprintln!("  [read suppressed — {} bytes]", output.len());
         }
         // Non-read tools: result body is not displayed in text mode to avoid

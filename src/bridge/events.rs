@@ -39,9 +39,11 @@ pub enum BridgeEvent {
         name: String,
     },
     /// Emitted when a tool call completes and returns output.
+    /// `is_read` is true when the tool's kind is `ToolKind::Read` (file read).
     ToolResult {
         name: String,
         output: String,
+        is_read: bool,
     },
     PermissionRequest {
         tool: ToolCallInfo,
