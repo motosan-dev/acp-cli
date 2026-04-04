@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-05
+
+### Fixed
+- **`--suppress-reads` had no effect**: `SessionUpdate::ToolCallUpdate` (the actual tool-completion event in the ACP protocol) was falling into the catch-all and never emitting `ToolResult`. The feature was silently inoperative in v0.3.0.
+- **Read tool detection used wrong name**: `is_read_tool()` matched against `"Read"` but the Claude agent sends title `"Read File"`. Replaced fragile string matching with `ToolKind::Read` from the ACP SDK — semantic and agent-agnostic.
+- **`prompt_done` event leaked in queue client**: IPC queue client printed `Session: event(prompt_done): end_turn` at the end of every queued prompt. Now silently ignored.
+
 ## [0.3.0] - 2026-04-04
 
 ### Added

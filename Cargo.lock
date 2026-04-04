@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "acp-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "agent-client-protocol",
  "async-trait",

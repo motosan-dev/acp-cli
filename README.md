@@ -4,6 +4,13 @@ Headless CLI client for the [Agent Client Protocol (ACP)](https://agentclientpro
 
 Rust port of [ACPX](https://github.com/openclaw/acpx).
 
+## Release Highlights (v0.3.1)
+
+- **`--suppress-reads` now works correctly**: v0.3.0 silently dropped all tool-completion events due to a protocol handling bug. Fixed by correctly handling `ToolCallUpdate` and using `ToolKind::Read` from the ACP SDK instead of fragile name matching.
+- **No `prompt_done` noise in queue client**: stray `Session: event(prompt_done): end_turn` line no longer appears.
+
+See [v0.3.0](#release-highlights-v030) below for the full feature set.
+
 ## Release Highlights (v0.3.0)
 
 - **`--prompt-retries <n>`**: automatically retry transient failures (spawn errors, connection drops) with exponential backoff and jitter.

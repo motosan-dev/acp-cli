@@ -2,7 +2,7 @@
 
 > Headless CLI client for the Agent Client Protocol (ACP). Rust port of ACPX. Talk to coding agents (Claude, Codex, Gemini, etc.) over structured JSON-RPC instead of terminal scraping.
 
-- Version 0.3.0
+- Version 0.3.1
 - GitHub: https://github.com/motosan-dev/acp-cli
 - crates.io: https://crates.io/crates/acp-cli
 
