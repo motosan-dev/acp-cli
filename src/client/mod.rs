@@ -108,7 +108,12 @@ impl acp::Client for BridgedAcpClient {
                         .tool_call_state
                         .borrow_mut()
                         .remove(&id)
-                        .unwrap_or_default();
+                        .unwrap_or_else(|| {
+                            // ToolCallUpdate arrived for an ID we never saw a ToolCall for.
+                            // Emit a result with an empty name rather than panicking.
+                            eprintln!("[acp-cli] warning: ToolCallUpdate for unknown id={id}");
+                            (String::new(), false)
+                        });
                     let output = update
                         .fields
                         .content
@@ -131,6 +136,11 @@ impl acp::Client for BridgedAcpClient {
 }
 
 /// Extract plain-text output from a slice of `ToolCallContent` items.
+///
+/// Only `Text` content blocks are collected; images, audio, and resource links
+/// are intentionally dropped — the CLI renders to a terminal and has no way to
+/// display binary content. If future agents produce non-text tool output that
+/// matters for display, this function is the place to extend.
 fn extract_text_output(content: &[acp::ToolCallContent]) -> String {
     content
         .iter()

@@ -72,12 +72,8 @@ impl QueueClient {
                     "text_chunk" => renderer.text_chunk(&data),
                     "tool_use" => renderer.tool_status(&data),
                     "tool_result" => {
-                        // Encoded as "name\x00{0|1}\x00output"
-                        let mut parts = data.splitn(3, '\x00');
-                        if let (Some(name), Some(is_read_str), Some(output)) =
-                            (parts.next(), parts.next(), parts.next())
-                        {
-                            renderer.tool_result(name, output, is_read_str == "1");
+                        if let Some((name, is_read, output)) = parse_tool_result_data(&data) {
+                            renderer.tool_result(name, output, is_read);
                         }
                     }
                     "prompt_done" => {
@@ -231,6 +227,16 @@ impl QueueClient {
     }
 }
 
+/// Parse a `tool_result` IPC data string into `(name, is_read, output)`.
+/// Format: `"name\x00{0|1}\x00output"` where `1` means `is_read`.
+fn parse_tool_result_data(data: &str) -> Option<(&str, bool, &str)> {
+    let mut parts = data.splitn(3, '\x00');
+    let name = parts.next()?;
+    let is_read = parts.next()? == "1";
+    let output = parts.next()?;
+    Some((name, is_read, output))
+}
+
 /// Generate a random reply ID using timestamp and random bytes.
 ///
 /// Uses a simple hex-encoded format without requiring the `uuid` crate.
@@ -245,4 +251,43 @@ fn generate_reply_id() -> String {
     // Mix timestamp with process id and a simple counter for uniqueness.
     let pid = std::process::id();
     format!("{timestamp:x}-{pid:x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_tool_result_data;
+
+    #[test]
+    fn parse_tool_result_is_read_true() {
+        let (name, is_read, output) =
+            parse_tool_result_data("Read File\x001\x00file content here").unwrap();
+        assert_eq!(name, "Read File");
+        assert!(is_read);
+        assert_eq!(output, "file content here");
+    }
+
+    #[test]
+    fn parse_tool_result_is_read_false() {
+        let (name, is_read, output) =
+            parse_tool_result_data("Bash\x000\x00command output").unwrap();
+        assert_eq!(name, "Bash");
+        assert!(!is_read);
+        assert_eq!(output, "command output");
+    }
+
+    #[test]
+    fn parse_tool_result_output_may_contain_null_bytes() {
+        // Output itself may contain \x00; splitn(3) must not split beyond the third field.
+        let (name, is_read, output) =
+            parse_tool_result_data("Read File\x001\x00line1\x00line2").unwrap();
+        assert_eq!(name, "Read File");
+        assert!(is_read);
+        assert_eq!(output, "line1\x00line2");
+    }
+
+    #[test]
+    fn parse_tool_result_malformed_returns_none() {
+        assert!(parse_tool_result_data("no-nulls-here").is_none());
+        assert!(parse_tool_result_data("only\x00one").is_none());
+    }
 }
