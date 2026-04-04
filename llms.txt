@@ -2,7 +2,7 @@
 
 > Headless CLI client for the Agent Client Protocol (ACP). Rust port of ACPX. Talk to coding agents (Claude, Codex, Gemini, etc.) over structured JSON-RPC instead of terminal scraping.
 
-- Version 0.2.2
+- Version 0.3.0
 - GitHub: https://github.com/motosan-dev/acp-cli
 - crates.io: https://crates.io/crates/acp-cli
 
@@ -46,20 +46,23 @@ echo "fix the bug" | acp-cli claude --approve-all
 
 | Name | Command | Type |
 |------|---------|------|
-| claude | `npx @zed-industries/claude-agent-acp` | npm adapter |
-| codex | `npx @zed-industries/codex-acp` | npm adapter |
+| claude | `npx @agentclientprotocol/claude-agent-acp@^0.24.2` | npm adapter |
+| codex | `npx @zed-industries/codex-acp@^0.10.0` | npm adapter |
 | gemini | `gemini --acp` | native |
 | copilot | `copilot --acp --stdio` | native |
 | cursor | `cursor-agent acp` | native |
 | goose | `goose acp` | native |
-| kiro | `kiro-cli acp` | native |
-| pi | `npx pi-acp` | npm adapter |
+| kiro | `kiro-cli-chat acp` | native |
+| pi | `npx pi-acp@^0.0.22` | npm adapter |
 | openclaw | `openclaw acp` | native |
 | opencode | `npx opencode-ai acp` | npm adapter |
 | kimi | `kimi acp` | native |
 | qwen | `qwen --acp` | native |
 | droid | `droid exec --output-format acp` | native |
 | kilocode | `npx @kilocode/cli acp` | npm adapter |
+| iflow | `iflow --experimental-acp` | native |
+| qoder | `qodercli --acp` | native |
+| trae | `traecli acp serve` | native |
 
 Unknown agent names are treated as raw commands.
 
@@ -96,6 +99,8 @@ acp-cli config show                             # print config
 | `--no-wait` | — | Fire-and-forget (queue and return) |
 | `--agent-override <cmd>` | — | Raw ACP command |
 | `--verbose` | — | Debug to stderr |
+| `--prompt-retries <n>` | `0` | Retry transient failures with exponential backoff |
+| `--suppress-reads` | — | Hide file-read body content in output |
 
 ## Permission Modes
 
@@ -188,8 +193,8 @@ Main thread (Send)          ACP thread (!Send, LocalSet)
 # 1. Bump version in Cargo.toml
 # 2. Update CHANGELOG.md
 # 3. Commit
-git commit -m "chore: release v0.2.2"
+git commit -m "chore: release v0.3.0"
 # 4. Tag + push (triggers publish.yml → crates.io)
-git tag -a v0.2.2 -m "v0.2.2 — summary"
-git push origin main v0.2.2
+git tag -a v0.3.0 -m "v0.3.0 — summary"
+git push origin main v0.3.0
 ```

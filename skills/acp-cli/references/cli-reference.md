@@ -32,6 +32,8 @@
 | `--no-wait` | — | Fire-and-forget mode |
 | `--agent-override <cmd>` | — | Raw ACP command (bypass registry) |
 | `--verbose` | — | Debug output to stderr |
+| `--prompt-retries <n>` | `0` | Retry count for transient failures (exponential backoff, jitter). Only connection-level errors retry; semantic errors (auth, permission) fail immediately. |
+| `--suppress-reads` | — | Suppress file-read tool body in output. Text: `[read suppressed — N bytes]` to stderr. JSON: `"output":"[suppressed]"`. Non-read tools unaffected. |
 
 ## Exit Codes
 
@@ -55,6 +57,8 @@ Streaming text to stdout, spinner/status to stderr. No spinner when piped.
 {"type":"session","sessionId":"abc-123"}
 {"type":"text","content":"Hello"}
 {"type":"tool","name":"Read"}
+{"type":"tool_result","name":"Read","output":"file content..."}
+{"type":"tool_result","name":"Read","output":"[suppressed]","suppressed":true}
 {"type":"done"}
 ```
 

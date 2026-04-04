@@ -7,7 +7,7 @@ description: Help developers use acp-cli — the Rust ACP CLI client for talking
 
 Headless CLI client for the Agent Client Protocol (ACP) — Rust port of ACPX.
 
-14 built-in agents. 3 output formats. 3 permission modes. Queue system with Unix socket IPC.
+17 built-in agents. 3 output formats. 3 permission modes. Queue system with Unix socket IPC.
 
 ## Quick Reference
 

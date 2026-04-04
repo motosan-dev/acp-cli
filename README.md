@@ -4,11 +4,12 @@ Headless CLI client for the [Agent Client Protocol (ACP)](https://agentclientpro
 
 Rust port of [ACPX](https://github.com/openclaw/acpx).
 
-## Release Highlights (v0.2.2)
+## Release Highlights (v0.3.0)
 
-- ACP bridge shutdown now always reaps child processes to avoid zombie accumulation.
-- Cleanup now also runs on early initialization/session setup failures.
-- Bridge cleanup tests expanded with initialization-failure coverage and cross-platform command usage.
+- **`--prompt-retries <n>`**: automatically retry transient failures (spawn errors, connection drops) with exponential backoff and jitter.
+- **`--suppress-reads`**: hide file-read body content in text and JSON output; tool name still shown.
+- **New agents**: `iflow`, `qoder`, `trae`.
+- **Agent fixes**: claude package renamed to `@agentclientprotocol/claude-agent-acp@^0.24.2`, kiro command updated to `kiro-cli-chat`, pinned npm versions for codex and pi.
 
 ## Install
 
@@ -89,6 +90,8 @@ acp-cli config show                             # print merged config
 | `-f, --file <path>` | | Read prompt from file (`-` for stdin) |
 | `--no-wait` | | Fire-and-forget (queue and return) |
 | `--agent-override <cmd>` | | Raw ACP command override |
+| `--prompt-retries <n>` | `0` | Retry transient failures with exponential backoff |
+| `--suppress-reads` | | Hide file-read body content in output |
 
 ## Config
 
@@ -126,20 +129,23 @@ Token for Claude is resolved in order:
 
 | Agent | Command | Type |
 |-------|---------|------|
-| claude | `npx @zed-industries/claude-agent-acp` | npm |
-| codex | `npx @zed-industries/codex-acp` | npm |
+| claude | `npx @agentclientprotocol/claude-agent-acp@^0.24.2` | npm |
+| codex | `npx @zed-industries/codex-acp@^0.10.0` | npm |
 | gemini | `gemini --acp` | native |
 | copilot | `copilot --acp --stdio` | native |
 | cursor | `cursor-agent acp` | native |
 | goose | `goose acp` | native |
-| kiro | `kiro-cli acp` | native |
-| pi | `npx pi-acp` | npm |
+| kiro | `kiro-cli-chat acp` | native |
+| pi | `npx pi-acp@^0.0.22` | npm |
 | openclaw | `openclaw acp` | native |
 | opencode | `npx opencode-ai acp` | npm |
 | kilocode | `npx @kilocode/cli acp` | npm |
 | kimi | `kimi acp` | native |
 | qwen | `qwen --acp` | native |
 | droid | `droid exec --output-format acp` | native |
+| iflow | `iflow --experimental-acp` | native |
+| qoder | `qodercli --acp` | native |
+| trae | `traecli acp serve` | native |
 
 Unknown agent names are treated as raw commands.
 
