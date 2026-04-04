@@ -196,3 +196,40 @@ fn prompt_retries_flag_is_accepted() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("prompt-retries"));
 }
+
+// --- --suppress-reads flag ---
+
+#[test]
+fn help_shows_suppress_reads_flag() {
+    let output = acp_cli().arg("--help").output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("suppress-reads"));
+}
+
+#[test]
+fn suppress_reads_default_is_false() {
+    use acp_cli::cli::Cli;
+    use clap::Parser;
+    let cli = Cli::parse_from(["acp-cli", "config", "show"]);
+    assert!(!cli.suppress_reads);
+}
+
+#[test]
+fn suppress_reads_flag_is_accepted() {
+    let output = acp_cli()
+        .args(["--suppress-reads", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("suppress-reads"));
+}
+
+#[test]
+fn suppress_reads_parses_to_true() {
+    use acp_cli::cli::Cli;
+    use clap::Parser;
+    let cli = Cli::parse_from(["acp-cli", "--suppress-reads", "config", "show"]);
+    assert!(cli.suppress_reads);
+}

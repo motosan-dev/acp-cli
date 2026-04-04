@@ -126,6 +126,7 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
                 &cli.format,
                 cli.timeout.or(config.timeout),
                 cli.prompt_retries,
+                cli.suppress_reads,
             )
             .await
         }
@@ -160,6 +161,7 @@ async fn run(cli: Cli) -> acp_cli::error::Result<i32> {
                     cli.timeout.or(config.timeout),
                     cli.no_wait,
                     cli.prompt_retries,
+                    cli.suppress_reads,
                 )
                 .await
             } else {

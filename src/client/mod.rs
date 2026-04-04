@@ -78,9 +78,22 @@ impl acp::Client for BridgedAcpClient {
                 }
             }
             acp::SessionUpdate::ToolCall(tool_call) => {
-                let _ = self.evt_tx.send(BridgeEvent::ToolUse {
-                    name: tool_call.title.clone(),
-                });
+                if let Some(ref raw) = tool_call.raw_output {
+                    // Tool completed — emit result event with its output.
+                    let output = match raw {
+                        serde_json::Value::String(s) => s.clone(),
+                        v => v.to_string(),
+                    };
+                    let _ = self.evt_tx.send(BridgeEvent::ToolResult {
+                        name: tool_call.title.clone(),
+                        output,
+                    });
+                } else {
+                    // Tool is starting — emit use event for spinner/status.
+                    let _ = self.evt_tx.send(BridgeEvent::ToolUse {
+                        name: tool_call.title.clone(),
+                    });
+                }
             }
             _ => {
                 // Ignore other session update variants

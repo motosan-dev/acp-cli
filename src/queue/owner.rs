@@ -400,6 +400,10 @@ impl QueueOwner {
                 kind: "agent_exited".to_string(),
                 data: code.map(|c| c.to_string()).unwrap_or_default(),
             }),
+            BridgeEvent::ToolResult { name, output } => Some(QueueResponse::Event {
+                kind: "tool_result".to_string(),
+                data: format!("{name}\x00{output}"),
+            }),
             BridgeEvent::PermissionRequest { .. } => {
                 // Permission requests are handled by the owner process itself,
                 // not forwarded to IPC clients.

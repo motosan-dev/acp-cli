@@ -63,12 +63,12 @@ impl Drop for PidGuard {
     }
 }
 
-/// Build a renderer from the format string.
-fn make_renderer(output_format: &str) -> Box<dyn OutputRenderer> {
+/// Build a renderer from the format string and options.
+fn make_renderer(output_format: &str, suppress_reads: bool) -> Box<dyn OutputRenderer> {
     match output_format {
-        "json" => Box::new(JsonRenderer::new()),
+        "json" => Box::new(JsonRenderer::new(suppress_reads)),
         "quiet" => Box::new(QuietRenderer::new()),
-        _ => Box::new(TextRenderer::new()),
+        _ => Box::new(TextRenderer::new(suppress_reads)),
     }
 }
 
@@ -116,6 +116,9 @@ async fn event_loop(
                         renderer.text_chunk(&text);
                     }
                     Some(BridgeEvent::ToolUse { name }) => renderer.tool_status(&name),
+                    Some(BridgeEvent::ToolResult { name, output }) => {
+                        renderer.tool_result(&name, &output);
+                    }
                     Some(BridgeEvent::PermissionRequest { tool, options, reply }) => {
                         let decision = resolve_permission(&tool, &options, permission_mode);
                         if matches!(decision, crate::bridge::PermissionOutcome::Cancelled) {
@@ -204,8 +207,9 @@ pub async fn run_prompt(
     timeout_secs: Option<u64>,
     no_wait: bool,
     prompt_retries: u32,
+    suppress_reads: bool,
 ) -> Result<i32> {
-    let mut renderer = make_renderer(output_format);
+    let mut renderer = make_renderer(output_format, suppress_reads);
 
     // Default TTL for the queue owner (5 minutes).
     let queue_ttl_secs: u64 = 300;
@@ -491,8 +495,9 @@ pub async fn run_exec(
     output_format: &str,
     timeout_secs: Option<u64>,
     prompt_retries: u32,
+    suppress_reads: bool,
 ) -> Result<i32> {
-    let mut renderer = make_renderer(output_format);
+    let mut renderer = make_renderer(output_format, suppress_reads);
     let total_attempts = prompt_retries.saturating_add(1);
     let mut attempt = 0u32;
 

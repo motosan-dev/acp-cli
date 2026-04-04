@@ -70,6 +70,11 @@ pub struct Cli {
     /// Only connection/bridge errors are retried; semantic errors fail immediately.
     #[arg(long, default_value = "0")]
     pub prompt_retries: u32,
+
+    /// Suppress file-read body content in output. Tool name and path are still
+    /// shown; only the returned bytes are replaced with `[read suppressed — N bytes]`.
+    #[arg(long)]
+    pub suppress_reads: bool,
 }
 
 #[derive(Subcommand)]
