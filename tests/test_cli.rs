@@ -179,15 +179,9 @@ fn help_shows_prompt_retries_flag() {
 
 #[test]
 fn prompt_retries_default_is_zero() {
-    // Parse the CLI with no --prompt-retries and verify the default value is 0.
     use acp_cli::cli::Cli;
     use clap::Parser;
-    let cli = Cli::try_parse_from(["acp-cli", "--help"]).unwrap_or_else(|_| {
-        Cli::try_parse_from(["acp-cli"]).unwrap_or_else(|_| {
-            // Fallback: parse with a known-safe invocation to read the field.
-            Cli::parse_from(["acp-cli", "config", "show"])
-        })
-    });
+    let cli = Cli::parse_from(["acp-cli", "config", "show"]);
     assert_eq!(cli.prompt_retries, 0);
 }
 

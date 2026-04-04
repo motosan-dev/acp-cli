@@ -18,7 +18,8 @@ use crate::session::persistence::SessionRecord;
 use crate::session::pid;
 use crate::session::scoping::{find_git_root, session_dir, session_key};
 
-/// Exponential backoff duration for retry attempt `n` (1-based), capped at 64 s.
+/// Exponential backoff duration for retry attempt `n` (0-based), capped at 64 s.
+/// Produces the sequence 1 s, 2 s, 4 s, 8 s, 16 s, 32 s, 64 s, 64 s, …
 /// A small jitter derived from the current nanosecond timestamp is added to
 /// prevent thundering-herd retries when multiple clients restart simultaneously.
 fn backoff(attempt: u32) -> Duration {
@@ -365,7 +366,7 @@ pub async fn run_prompt(
         let mut b = match AcpBridge::start(command.clone(), args.clone(), cwd.clone()).await {
             Ok(b) => b,
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
-                let delay = backoff(attempt + 1);
+                let delay = backoff(attempt);
                 log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
                 tokio::time::sleep(delay).await;
@@ -385,7 +386,7 @@ pub async fn run_prompt(
             Ok(rx) => rx,
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
                 let _ = b.shutdown().await;
-                let delay = backoff(attempt + 1);
+                let delay = backoff(attempt);
                 log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
                 tokio::time::sleep(delay).await;
@@ -419,7 +420,7 @@ pub async fn run_prompt(
         match result {
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
                 let _ = b.shutdown().await;
-                let delay = backoff(attempt + 1);
+                let delay = backoff(attempt);
                 log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
                 tokio::time::sleep(delay).await;
@@ -499,7 +500,7 @@ pub async fn run_exec(
         let mut bridge = match AcpBridge::start(command.clone(), args.clone(), cwd.clone()).await {
             Ok(b) => b,
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
-                let delay = backoff(attempt + 1);
+                let delay = backoff(attempt);
                 log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
                 tokio::time::sleep(delay).await;
@@ -514,7 +515,7 @@ pub async fn run_exec(
             Ok(rx) => rx,
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
                 let _ = bridge.shutdown().await;
-                let delay = backoff(attempt + 1);
+                let delay = backoff(attempt);
                 log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
                 tokio::time::sleep(delay).await;
@@ -541,7 +542,7 @@ pub async fn run_exec(
         match result {
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
                 let _ = bridge.shutdown().await;
-                let delay = backoff(attempt + 1);
+                let delay = backoff(attempt);
                 log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
                 tokio::time::sleep(delay).await;
