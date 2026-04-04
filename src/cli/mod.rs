@@ -65,6 +65,11 @@ pub struct Cli {
     /// for the result. Requires an active session (queue owner) to be running.
     #[arg(long)]
     pub no_wait: bool,
+
+    /// Retry transient prompt failures up to N times with exponential backoff.
+    /// Only connection/bridge errors are retried; semantic errors fail immediately.
+    #[arg(long, default_value = "0")]
+    pub prompt_retries: u32,
 }
 
 #[derive(Subcommand)]

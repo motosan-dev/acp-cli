@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::bridge::events::{BridgeEvent, PromptResult};
 use crate::bridge::{AcpBridge, BridgeCancelHandle};
 use crate::client::permissions::{PermissionMode, resolve_permission};
-use crate::error::{AcpCliError, Result};
+use crate::error::{AcpCliError, Result, is_transient};
 use crate::output::OutputRenderer;
 use crate::output::json::JsonRenderer;
 use crate::output::quiet::QuietRenderer;
@@ -17,6 +17,30 @@ use crate::session::history::{ConversationEntry, append_entry};
 use crate::session::persistence::SessionRecord;
 use crate::session::pid;
 use crate::session::scoping::{find_git_root, session_dir, session_key};
+
+/// Exponential backoff duration for retry attempt `n` (0-based), capped at 64 s.
+/// Produces the sequence 1 s, 2 s, 4 s, 8 s, 16 s, 32 s, 64 s, 64 s, …
+/// A small jitter derived from the current nanosecond timestamp is added to
+/// prevent thundering-herd retries when multiple clients restart simultaneously.
+fn backoff(attempt: u32) -> Duration {
+    let base = Duration::from_secs(1u64 << attempt.min(6));
+    let jitter = Duration::from_millis(
+        (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_millis()
+            % 500) as u64,
+    );
+    base + jitter
+}
+
+/// Emit a human-readable retry warning to stderr.
+///
+/// `attempt` is 1-based (the attempt that just failed); `total` is the total
+/// number of attempts that will be made (`prompt_retries + 1`).
+fn log_retry(attempt: u32, total: u32, err: &AcpCliError, delay: Duration) {
+    eprintln!("prompt attempt {attempt}/{total} failed ({err}), retrying in {delay:?}");
+}
 
 /// RAII guard that removes the PID file when dropped, ensuring cleanup even on
 /// early returns or panics.
@@ -179,6 +203,7 @@ pub async fn run_prompt(
     output_format: &str,
     timeout_secs: Option<u64>,
     no_wait: bool,
+    prompt_retries: u32,
 ) -> Result<i32> {
     let mut renderer = make_renderer(output_format);
 
@@ -331,23 +356,79 @@ pub async fn run_prompt(
         AcpCliError::Io(e)
     })?;
 
-    // Start bridge
-    let mut bridge = AcpBridge::start(command, args, cwd).await?;
-    let cancel = bridge.cancel_handle();
+    // Start bridge + send first prompt, with optional retry on transient failures.
+    // Each attempt starts a fresh bridge process. `Connection` errors (spawn failure,
+    // ACP init/session stall, bridge channel closed) are transient and retried.
+    // Semantic errors (Agent, PermissionDenied, Interrupted, Timeout) are not.
+    let total_attempts = prompt_retries.saturating_add(1);
+    let mut attempt = 0u32; // 0-based index of the current try
+    let (bridge, loop_result) = 'retry: loop {
+        let mut b = match AcpBridge::start(command.clone(), args.clone(), cwd.clone()).await {
+            Ok(b) => b,
+            Err(e) if is_transient(&e) && attempt < prompt_retries => {
+                let delay = backoff(attempt);
+                log_retry(attempt + 1, total_attempts, &e, delay);
+                attempt += 1;
+                tokio::time::sleep(delay).await;
+                continue 'retry;
+            }
+            Err(e) => {
+                LeaseFile::remove(&key);
+                crate::queue::ipc::cleanup_socket(&key);
+                return Err(e);
+            }
+        };
 
-    // Send the first prompt (get oneshot receiver without blocking)
-    let prompt_reply = bridge.send_prompt(vec![prompt_text.clone()]).await?;
+        let cancel = b.cancel_handle();
 
-    // Run event loop for the first prompt
-    let loop_result = event_loop(
-        &mut bridge.evt_rx,
-        prompt_reply,
-        &cancel,
-        &mut renderer,
-        &permission_mode,
-        timeout_secs,
-    )
-    .await;
+        // Send the first prompt (get oneshot receiver without blocking).
+        let prompt_reply = match b.send_prompt(vec![prompt_text.clone()]).await {
+            Ok(rx) => rx,
+            Err(e) if is_transient(&e) && attempt < prompt_retries => {
+                let _ = b.shutdown().await;
+                let delay = backoff(attempt);
+                log_retry(attempt + 1, total_attempts, &e, delay);
+                attempt += 1;
+                tokio::time::sleep(delay).await;
+                continue 'retry;
+            }
+            Err(e) => {
+                let _ = b.shutdown().await;
+                LeaseFile::remove(&key);
+                crate::queue::ipc::cleanup_socket(&key);
+                return Err(e);
+            }
+        };
+
+        // Run event loop for the first prompt.
+        let result = event_loop(
+            &mut b.evt_rx,
+            prompt_reply,
+            &cancel,
+            &mut renderer,
+            &permission_mode,
+            timeout_secs,
+        )
+        .await;
+
+        // Guard against retrying after side effects. Currently, event_loop only
+        // returns Err(Interrupted) or Err(Timeout), neither of which is transient,
+        // so this branch is effectively dead code today. It is kept to correctly
+        // handle any future transient variant added to event_loop. Connection errors
+        // arise only during initialization (before any text is produced), so retrying
+        // them cannot replay agent side effects.
+        match result {
+            Err(e) if is_transient(&e) && attempt < prompt_retries => {
+                let _ = b.shutdown().await;
+                let delay = backoff(attempt);
+                log_retry(attempt + 1, total_attempts, &e, delay);
+                attempt += 1;
+                tokio::time::sleep(delay).await;
+                continue 'retry;
+            }
+            result => break 'retry (b, result),
+        }
+    };
 
     // Update the session record with the new ACP session ID (best-effort).
     if let Ok(ref res) = loop_result
@@ -400,6 +481,7 @@ pub async fn run_prompt(
 }
 
 /// Run a non-interactive exec command (no session persistence).
+#[allow(clippy::too_many_arguments)]
 pub async fn run_exec(
     command: String,
     args: Vec<String>,
@@ -408,27 +490,68 @@ pub async fn run_exec(
     permission_mode: PermissionMode,
     output_format: &str,
     timeout_secs: Option<u64>,
+    prompt_retries: u32,
 ) -> Result<i32> {
     let mut renderer = make_renderer(output_format);
+    let total_attempts = prompt_retries.saturating_add(1);
+    let mut attempt = 0u32;
 
-    // Start bridge
-    let mut bridge = AcpBridge::start(command, args, cwd).await?;
-    let cancel = bridge.cancel_handle();
+    loop {
+        let mut bridge = match AcpBridge::start(command.clone(), args.clone(), cwd.clone()).await {
+            Ok(b) => b,
+            Err(e) if is_transient(&e) && attempt < prompt_retries => {
+                let delay = backoff(attempt);
+                log_retry(attempt + 1, total_attempts, &e, delay);
+                attempt += 1;
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
 
-    // Send prompt
-    let prompt_reply = bridge.send_prompt(vec![prompt_text]).await?;
+        let cancel = bridge.cancel_handle();
 
-    // Run event loop
-    let result = event_loop(
-        &mut bridge.evt_rx,
-        prompt_reply,
-        &cancel,
-        &mut renderer,
-        &permission_mode,
-        timeout_secs,
-    )
-    .await;
+        let prompt_reply = match bridge.send_prompt(vec![prompt_text.clone()]).await {
+            Ok(rx) => rx,
+            Err(e) if is_transient(&e) && attempt < prompt_retries => {
+                let _ = bridge.shutdown().await;
+                let delay = backoff(attempt);
+                log_retry(attempt + 1, total_attempts, &e, delay);
+                attempt += 1;
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            Err(e) => {
+                let _ = bridge.shutdown().await;
+                return Err(e);
+            }
+        };
 
-    let _ = bridge.shutdown().await;
-    result.map(|r| r.exit_code)
+        let result = event_loop(
+            &mut bridge.evt_rx,
+            prompt_reply,
+            &cancel,
+            &mut renderer,
+            &permission_mode,
+            timeout_secs,
+        )
+        .await;
+
+        // Mirror the event_loop retry from run_prompt for consistency.
+        // See comment there for why this branch is currently dead code.
+        match result {
+            Err(e) if is_transient(&e) && attempt < prompt_retries => {
+                let _ = bridge.shutdown().await;
+                let delay = backoff(attempt);
+                log_retry(attempt + 1, total_attempts, &e, delay);
+                attempt += 1;
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            result => {
+                let _ = bridge.shutdown().await;
+                return result.map(|r| r.exit_code);
+            }
+        }
+    }
 }
