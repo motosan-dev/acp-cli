@@ -26,7 +26,10 @@ pub fn default_registry() -> HashMap<String, AgentEntry> {
         "claude".into(),
         AgentEntry {
             command: "npx".into(),
-            args: vec!["-y".into(), "@zed-industries/claude-agent-acp".into()],
+            args: vec![
+                "-y".into(),
+                "@agentclientprotocol/claude-agent-acp@^0.24.2".into(),
+            ],
             description: "Claude Code via ACP bridge".into(),
         },
     );
@@ -34,7 +37,7 @@ pub fn default_registry() -> HashMap<String, AgentEntry> {
         "codex".into(),
         AgentEntry {
             command: "npx".into(),
-            args: vec!["-y".into(), "@zed-industries/codex-acp".into()],
+            args: vec!["-y".into(), "@zed-industries/codex-acp@^0.10.0".into()],
             description: "OpenAI Codex CLI".into(),
         },
     );
@@ -42,7 +45,7 @@ pub fn default_registry() -> HashMap<String, AgentEntry> {
         "pi".into(),
         AgentEntry {
             command: "npx".into(),
-            args: vec!["-y".into(), "pi-acp".into()],
+            args: vec!["-y".into(), "pi-acp@^0.0.22".into()],
             description: "Pi Coding Agent".into(),
         },
     );
@@ -99,9 +102,33 @@ pub fn default_registry() -> HashMap<String, AgentEntry> {
     m.insert(
         "kiro".into(),
         AgentEntry {
-            command: "kiro-cli".into(),
+            command: "kiro-cli-chat".into(),
             args: vec!["acp".into()],
             description: "Kiro CLI (AWS)".into(),
+        },
+    );
+    m.insert(
+        "iflow".into(),
+        AgentEntry {
+            command: "iflow".into(),
+            args: vec!["--experimental-acp".into()],
+            description: "iFlow ACP agent".into(),
+        },
+    );
+    m.insert(
+        "qoder".into(),
+        AgentEntry {
+            command: "qodercli".into(),
+            args: vec!["--acp".into()],
+            description: "Qoder CLI".into(),
+        },
+    );
+    m.insert(
+        "trae".into(),
+        AgentEntry {
+            command: "traecli".into(),
+            args: vec!["acp".into(), "serve".into()],
+            description: "Trae CLI".into(),
         },
     );
     m.insert(
