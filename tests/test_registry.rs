@@ -28,18 +28,27 @@ fn resolves_kiro_uses_kiro_cli_chat() {
 }
 
 #[test]
-fn resolves_new_agents() {
+fn resolves_iflow() {
     let registry = default_registry();
     let overrides = HashMap::new();
-
     let (cmd, args) = resolve_agent("iflow", &registry, &overrides);
     assert_eq!(cmd, "iflow");
     assert!(args.contains(&"--experimental-acp".to_string()));
+}
 
+#[test]
+fn resolves_qoder() {
+    let registry = default_registry();
+    let overrides = HashMap::new();
     let (cmd, args) = resolve_agent("qoder", &registry, &overrides);
     assert_eq!(cmd, "qodercli");
     assert!(args.contains(&"--acp".to_string()));
+}
 
+#[test]
+fn resolves_trae() {
+    let registry = default_registry();
+    let overrides = HashMap::new();
     let (cmd, args) = resolve_agent("trae", &registry, &overrides);
     assert_eq!(cmd, "traecli");
     assert!(args.contains(&"acp".to_string()) && args.contains(&"serve".to_string()));
