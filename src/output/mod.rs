@@ -15,6 +15,10 @@ pub trait OutputRenderer {
 /// Returns `true` for tool names that perform file reads.
 ///
 /// Used to decide whether `--suppress-reads` should hide the tool output.
+/// The list is intentionally exhaustive and case-sensitive. When adding
+/// support for a new agent whose read tool has a different name, add the
+/// exact name string here — do not use case-insensitive matching, as that
+/// would risk misidentifying non-read tools with similar names.
 pub fn is_read_tool(name: &str) -> bool {
     matches!(
         name,
