@@ -196,16 +196,16 @@ async fn acp_thread_main(
 
     let mut child = cmd
         .spawn()
-        .map_err(|e| AcpCliError::Agent(format!("{command}: {e}")))?;
+        .map_err(|e| AcpCliError::Connection(format!("spawn {command}: {e}")))?;
 
     let stdin = child
         .stdin
         .take()
-        .ok_or_else(|| AcpCliError::Agent("no stdin".into()))?;
+        .ok_or_else(|| AcpCliError::Connection("agent has no stdin".into()))?;
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| AcpCliError::Agent("no stdout".into()))?;
+        .ok_or_else(|| AcpCliError::Connection("agent has no stdout".into()))?;
 
     let client = BridgedAcpClient {
         evt_tx: evt_tx.clone(),

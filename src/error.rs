@@ -41,10 +41,13 @@ impl AcpCliError {
 }
 
 /// Returns `true` for errors that are safe to retry (network/connection failures
-/// before any agent output was produced).
+/// before any agent output was produced). This includes agent process spawn
+/// failures, ACP initialization/session-creation failures, and bridge channel
+/// closures — all mapped to `Connection` in the bridge layer.
 ///
-/// Non-retriable errors include semantic failures (permission denied, session not
-/// found, auth errors) and user-initiated interrupts.
+/// Non-retriable errors include semantic ACP failures (permission denied,
+/// session not found), user-initiated interrupts, timeouts (which may imply
+/// partial side effects), and I/O errors unrelated to the network layer.
 pub fn is_transient(err: &AcpCliError) -> bool {
     matches!(err, AcpCliError::Connection(_))
 }

@@ -179,10 +179,16 @@ fn help_shows_prompt_retries_flag() {
 
 #[test]
 fn prompt_retries_default_is_zero() {
-    // Passing an unknown agent with no prompt still shows help (exit 0).
-    // The important thing is that omitting --prompt-retries doesn't cause a parse error.
-    let output = acp_cli().arg("--help").output().unwrap();
-    assert!(output.status.success());
+    // Parse the CLI with no --prompt-retries and verify the default value is 0.
+    use acp_cli::cli::Cli;
+    use clap::Parser;
+    let cli = Cli::try_parse_from(["acp-cli", "--help"]).unwrap_or_else(|_| {
+        Cli::try_parse_from(["acp-cli"]).unwrap_or_else(|_| {
+            // Fallback: parse with a known-safe invocation to read the field.
+            Cli::parse_from(["acp-cli", "config", "show"])
+        })
+    });
+    assert_eq!(cli.prompt_retries, 0);
 }
 
 #[test]

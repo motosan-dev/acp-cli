@@ -24,13 +24,21 @@ use crate::session::scoping::{find_git_root, session_dir, session_key};
 fn backoff(attempt: u32) -> Duration {
     let base = Duration::from_secs(1u64 << attempt.min(6));
     let jitter = Duration::from_millis(
-        (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .subsec_millis()
             % 500) as u64,
     );
     base + jitter
+}
+
+/// Emit a human-readable retry warning to stderr.
+///
+/// `attempt` is 1-based (the attempt that just failed); `total` is the total
+/// number of attempts that will be made (`prompt_retries + 1`).
+fn log_retry(attempt: u32, total: u32, err: &AcpCliError, delay: Duration) {
+    eprintln!("prompt attempt {attempt}/{total} failed ({err}), retrying in {delay:?}");
 }
 
 /// RAII guard that removes the PID file when dropped, ensuring cleanup even on
@@ -348,20 +356,18 @@ pub async fn run_prompt(
     })?;
 
     // Start bridge + send first prompt, with optional retry on transient failures.
-    // Each attempt starts a fresh bridge process. A retry is triggered only for
-    // connection-level errors (agent spawn failure, bridge channel closed) — semantic
-    // errors and user interrupts are never retried. Side-effects are guarded: if the
-    // agent already produced text output we do NOT retry to avoid replaying actions.
-    let mut attempt = 0u32;
+    // Each attempt starts a fresh bridge process. `Connection` errors (spawn failure,
+    // ACP init/session stall, bridge channel closed) are transient and retried.
+    // Semantic errors (Agent, PermissionDenied, Interrupted, Timeout) are not.
+    let total_attempts = prompt_retries.saturating_add(1);
+    let mut attempt = 0u32; // 0-based index of the current try
     let (bridge, loop_result) = 'retry: loop {
         let mut b = match AcpBridge::start(command.clone(), args.clone(), cwd.clone()).await {
             Ok(b) => b,
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
+                let delay = backoff(attempt + 1);
+                log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
-                let delay = backoff(attempt);
-                eprintln!(
-                    "prompt attempt {attempt}/{prompt_retries} failed ({e}), retrying in {delay:?}"
-                );
                 tokio::time::sleep(delay).await;
                 continue 'retry;
             }
@@ -379,11 +385,9 @@ pub async fn run_prompt(
             Ok(rx) => rx,
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
                 let _ = b.shutdown().await;
+                let delay = backoff(attempt + 1);
+                log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
-                let delay = backoff(attempt);
-                eprintln!(
-                    "prompt attempt {attempt}/{prompt_retries} failed ({e}), retrying in {delay:?}"
-                );
                 tokio::time::sleep(delay).await;
                 continue 'retry;
             }
@@ -406,16 +410,18 @@ pub async fn run_prompt(
         )
         .await;
 
-        // Retry transient event-loop errors only when no output was produced
-        // (side-effect guard: if the agent already wrote text, do not replay).
+        // Guard against retrying after side effects. Currently, event_loop only
+        // returns Err(Interrupted) or Err(Timeout), neither of which is transient,
+        // so this branch is effectively dead code today. It is kept to correctly
+        // handle any future transient variant added to event_loop. Connection errors
+        // arise only during initialization (before any text is produced), so retrying
+        // them cannot replay agent side effects.
         match result {
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
                 let _ = b.shutdown().await;
+                let delay = backoff(attempt + 1);
+                log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
-                let delay = backoff(attempt);
-                eprintln!(
-                    "prompt attempt {attempt}/{prompt_retries} failed ({e}), retrying in {delay:?}"
-                );
                 tokio::time::sleep(delay).await;
                 continue 'retry;
             }
@@ -486,17 +492,16 @@ pub async fn run_exec(
     prompt_retries: u32,
 ) -> Result<i32> {
     let mut renderer = make_renderer(output_format);
+    let total_attempts = prompt_retries.saturating_add(1);
     let mut attempt = 0u32;
 
     loop {
         let mut bridge = match AcpBridge::start(command.clone(), args.clone(), cwd.clone()).await {
             Ok(b) => b,
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
+                let delay = backoff(attempt + 1);
+                log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
-                let delay = backoff(attempt);
-                eprintln!(
-                    "prompt attempt {attempt}/{prompt_retries} failed ({e}), retrying in {delay:?}"
-                );
                 tokio::time::sleep(delay).await;
                 continue;
             }
@@ -509,11 +514,9 @@ pub async fn run_exec(
             Ok(rx) => rx,
             Err(e) if is_transient(&e) && attempt < prompt_retries => {
                 let _ = bridge.shutdown().await;
+                let delay = backoff(attempt + 1);
+                log_retry(attempt + 1, total_attempts, &e, delay);
                 attempt += 1;
-                let delay = backoff(attempt);
-                eprintln!(
-                    "prompt attempt {attempt}/{prompt_retries} failed ({e}), retrying in {delay:?}"
-                );
                 tokio::time::sleep(delay).await;
                 continue;
             }
@@ -533,7 +536,21 @@ pub async fn run_exec(
         )
         .await;
 
-        let _ = bridge.shutdown().await;
-        return result.map(|r| r.exit_code);
+        // Mirror the event_loop retry from run_prompt for consistency.
+        // See comment there for why this branch is currently dead code.
+        match result {
+            Err(e) if is_transient(&e) && attempt < prompt_retries => {
+                let _ = bridge.shutdown().await;
+                let delay = backoff(attempt + 1);
+                log_retry(attempt + 1, total_attempts, &e, delay);
+                attempt += 1;
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            result => {
+                let _ = bridge.shutdown().await;
+                return result.map(|r| r.exit_code);
+            }
+        }
     }
 }
